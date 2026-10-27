@@ -9,10 +9,11 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.spacetime.app"
+      "bundleIdentifier": "com.mrkev.spacetime",
+      "appleTeamId": "J8ZU83TC57"
     },
     "android": {
-      "package": "com.spacetime.app",
+      "package": "com.mrkev.spacetime",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "./assets/android-icon-foreground.png",
@@ -45,7 +46,12 @@
           "isAndroidForegroundServiceEnabled": false
         }
       ],
-      "expo-notifications",
+      [
+        "expo-notifications",
+        {
+          "enableRemoteNotifications": false
+        }
+      ],
       "expo-font"
     ],
     "experiments": {
