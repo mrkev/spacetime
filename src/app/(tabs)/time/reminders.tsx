@@ -166,7 +166,11 @@ function DatedReminderRow({
           size={24}
         />
       </Pressable>
-      <View style={styles.rowText}>
+      <Pressable
+        style={styles.rowText}
+        onPress={() => router.push({ pathname: '/reminder/[id]', params: { id: reminder.key } })}
+        accessibilityRole="button"
+      >
         <Text style={[styles.title, { color: theme.text }]} numberOfLines={2}>
           {reminder.title}
         </Text>
@@ -182,7 +186,7 @@ function DatedReminderRow({
             .filter(Boolean)
             .join(' · ')}
         </Text>
-      </View>
+      </Pressable>
     </View>
   );
 }

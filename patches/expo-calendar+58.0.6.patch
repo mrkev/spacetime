@@ -1,0 +1,22 @@
+diff --git a/node_modules/expo-calendar/ios/Dialogs/ViewEventViewController.swift b/node_modules/expo-calendar/ios/Dialogs/ViewEventViewController.swift
+index 775db49..d3ec089 100644
+--- a/node_modules/expo-calendar/ios/Dialogs/ViewEventViewController.swift
++++ b/node_modules/expo-calendar/ios/Dialogs/ViewEventViewController.swift
+@@ -21,6 +21,17 @@ class ViewEventViewController: UINavigationController, UIAdaptivePresentationCon
+     presentationController?.delegate = self
+   }
+ 
++  // Newer iOS versions also put a Delete button in the toolbar of EKEventViewController, which
++  // duplicates the one in the event details. Keep the toolbar hidden so there's only one.
++  override func setToolbarHidden(_ hidden: Bool, animated: Bool) {
++    super.setToolbarHidden(true, animated: animated)
++  }
++
++  override var isToolbarHidden: Bool {
++    get { super.isToolbarHidden }
++    set { super.isToolbarHidden = true }
++  }
++
+   func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
+     onDismiss()
+     promise.resolve(DialogViewResponse(action: .canceled))

@@ -51,6 +51,11 @@ export default function RootLayout() {
               name="reminder/new"
               options={{ presentation: 'modal', title: 'New Reminder' }}
             />
+            <Stack.Screen name="reminder/[id]" options={{ presentation: 'modal', title: '' }} />
+            <Stack.Screen
+              name="reminder/edit"
+              options={{ presentation: 'modal', title: 'Edit Reminder' }}
+            />
           </Stack>
         </CalendarProvider>
       </ThemeProvider>

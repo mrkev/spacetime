@@ -32,6 +32,7 @@ export const icons = {
   locationFill: { ios: 'location.fill', android: 'my_location' },
   search: { ios: 'magnifyingglass', android: 'search' },
   close: { ios: 'xmark.circle.fill', android: 'cancel' },
+  xmark: { ios: 'xmark', android: 'close' },
   chevronRight: { ios: 'chevron.right', android: 'chevron_right' },
   circle: { ios: 'circle', android: 'radio_button_unchecked' },
   checkCircle: { ios: 'checkmark.circle.fill', android: 'check_circle' },

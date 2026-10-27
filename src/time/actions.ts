@@ -3,7 +3,7 @@ import { useCallback } from 'react';
 import { ActionSheetIOS, Alert, Platform } from 'react-native';
 
 import { REMINDERS_COLLECTION_ID } from '../space/store';
-import { useCalendar, type CalendarEvent } from './CalendarProvider';
+import { useCalendar, type CalendarEvent, type CalendarReminder } from './CalendarProvider';
 import { copyEvent, getCopiedEvent, snapshotEvent, type CopiedEvent } from './editing';
 
 /** Next half hour from now, on the given day. */
@@ -130,6 +130,10 @@ export function useTimeActions() {
     });
   }, []);
 
+  const openReminder = useCallback((reminder: CalendarReminder) => {
+    router.push({ pathname: '/reminder/[id]', params: { id: reminder.key } });
+  }, []);
+
   const createLocationReminder = useCallback(() => {
     router.push({ pathname: '/place/new', params: { collectionId: REMINDERS_COLLECTION_ID } });
   }, []);
@@ -242,6 +246,7 @@ export function useTimeActions() {
     createEvent,
     openEvent,
     createReminder,
+    openReminder,
     createLocationReminder,
     showAddMenu,
     rescheduleEvent,

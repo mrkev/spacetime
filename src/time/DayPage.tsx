@@ -1,5 +1,5 @@
 import * as Haptics from 'expo-haptics';
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
 import {
   Pressable,
   ScrollView,
@@ -7,11 +7,14 @@ import {
   Text,
   View,
   type GestureResponderEvent,
+  type ScrollViewInstance,
 } from 'react-native';
 import {
   GestureDetector,
   usePanGesture,
+  usePinchGesture,
   type PanGestureConfig,
+  type PinchGestureConfig,
 } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -37,14 +40,21 @@ import {
 } from './editing';
 import { layoutDay, type PositionedItem, type TimedItem } from './layout';
 
+/** How tall an hour is by default; pinching zooms between the min and max. */
 export const HOUR_HEIGHT = 56;
+export const MIN_HOUR_HEIGHT = 24;
+export const MAX_HOUR_HEIGHT = 180;
 const GUTTER = 56;
-const TIMELINE_PADDING = 12;
+export const TIMELINE_PADDING = 12;
 const REMINDER_MINUTES = 30;
 const MIN_BLOCK_HEIGHT = 20;
 /** How long to hold an event before it lifts for dragging. */
 const LONG_PRESS_MS = 350;
 const HANDLE_HIT = 44;
+// Event text uses fixed line heights so blocks can work out how many lines fit.
+const TITLE_LINE = 15;
+const SUBTITLE_LINE = 14;
+const BLOCK_PADDING = 2;
 
 type Props = {
   date: Date;
@@ -54,12 +64,17 @@ type Props = {
   onScrollY: (y: number) => void;
   onPressEvent: (event: CalendarEvent) => void;
   onToggleReminder: (reminder: CalendarReminder) => void;
+  onPressReminder: (reminder: CalendarReminder) => void;
   onCreateAt: (start: Date) => void;
   /** The selected (editable) event's key, if it's on this day. */
   selectedKey: string | null;
   onSelect: (key: string | null) => void;
-  /** Lets the pager stop paging while an event is being dragged. */
-  onDraggingChange: (dragging: boolean) => void;
+  /** Lets the pager stop paging while an event is dragged or the day is pinched. */
+  onGestureActive: (active: boolean) => void;
+  /** Points per hour; pinching changes it for every day. */
+  hourHeight: number;
+  onZoom: (hourHeight: number) => void;
+  onZoomEnd: () => void;
 };
 
 /**
@@ -88,10 +103,14 @@ export const DayPage = memo(function DayPage({
   onScrollY,
   onPressEvent,
   onToggleReminder,
+  onPressReminder,
   onCreateAt,
   selectedKey,
   onSelect,
-  onDraggingChange,
+  onGestureActive,
+  hourHeight,
+  onZoom,
+  onZoomEnd,
 }: Props) {
   const theme = useTheme();
   const { rescheduleEvent, deleteEvent, duplicateEvent, cutEvent, copyEvent, pasteEvent } =
@@ -142,6 +161,65 @@ export const DayPage = memo(function DayPage({
   const today = isToday(date);
   // Captured once so re-renders don't fight the user's scrolling.
   const [initialOffset] = useState(() => ({ x: 0, y: initialScrollY }));
+  const scrollRef = useRef<ScrollViewInstance>(null);
+  const scrollY = useRef(initialScrollY);
+
+  // Pinch to zoom. The minute under your fingers stays put: each update works out the offset that
+  // keeps it there, and the layout effect below applies it once the taller (or shorter) day renders.
+  const [pinching, setPinching] = useState(false);
+  const pinchStart = useRef<{ height: number; minute: number; focalY: number } | null>(null);
+  const zoomOffset = useRef<number | null>(null);
+  const zoom = useRef({ hourHeight, onZoom, onZoomEnd, onGestureActive });
+  useEffect(() => {
+    zoom.current = { hourHeight, onZoom, onZoomEnd, onGestureActive };
+  });
+  const pinch = usePinchGesture(
+    useMemo<PinchGestureConfig>(
+      () => ({
+        runOnJS: true,
+        onActivate: (e) => {
+          const height = zoom.current.hourHeight;
+          const minute = ((scrollY.current + e.focalY - TIMELINE_PADDING) / height) * 60;
+          pinchStart.current = { height, minute, focalY: e.focalY };
+          setPinching(true);
+          zoom.current.onGestureActive(true);
+        },
+        onUpdate: (e) => {
+          const start = pinchStart.current;
+          if (!start) return;
+          const next = Math.round(
+            Math.min(MAX_HOUR_HEIGHT, Math.max(MIN_HOUR_HEIGHT, start.height * e.scale)),
+          );
+          if (next === zoom.current.hourHeight) return;
+          zoomOffset.current = TIMELINE_PADDING + (start.minute / 60) * next - start.focalY;
+          zoom.current.onZoom(next);
+        },
+        onDeactivate: () => {
+          pinchStart.current = null;
+          setPinching(false);
+          zoom.current.onGestureActive(false);
+          zoom.current.onZoomEnd();
+        },
+      }),
+      [],
+    ),
+  );
+
+  // Other days (and this one, outside a pinch) keep the same time at the top when the zoom changes.
+  const lastHourHeight = useRef(hourHeight);
+  useLayoutEffect(() => {
+    const previous = lastHourHeight.current;
+    if (previous === hourHeight) return;
+    lastHourHeight.current = hourHeight;
+    const y = Math.max(
+      0,
+      zoomOffset.current ??
+        TIMELINE_PADDING + ((scrollY.current - TIMELINE_PADDING) * hourHeight) / previous,
+    );
+    zoomOffset.current = null;
+    scrollY.current = y;
+    scrollRef.current?.scrollTo({ y, animated: false });
+  }, [hourHeight]);
 
   const [draft, setDraft] = useState<Draft | null>(null);
   const activeDraft = draft && draft.basis === items ? draft : null;
@@ -164,7 +242,7 @@ export const DayPage = memo(function DayPage({
   const minuteAt = (e: GestureResponderEvent) => {
     const y = e.nativeEvent.locationY - TIMELINE_PADDING;
     // Snap to the quarter hour like Calendar does.
-    return Math.max(0, Math.min(23 * 60 + 45, Math.round((y / HOUR_HEIGHT) * 4) * 15));
+    return Math.max(0, Math.min(23 * 60 + 45, Math.round((y / hourHeight) * 4) * 15));
   };
 
   const onLongPress = (e: GestureResponderEvent) => {
@@ -200,7 +278,7 @@ export const DayPage = memo(function DayPage({
     });
     setPasteMinute(null);
     if (!isSelected(entry.key)) onSelect(entry.key);
-    onDraggingChange(true);
+    onGestureActive(true);
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
   };
 
@@ -216,7 +294,7 @@ export const DayPage = memo(function DayPage({
   };
 
   const endDrag = (entry: EventEntry, canceled: boolean) => {
-    onDraggingChange(false);
+    onGestureActive(false);
     lastDragEnd.current = Date.now();
     const range = lastRange.current;
     lastRange.current = null;
@@ -249,7 +327,7 @@ export const DayPage = memo(function DayPage({
   let menu: { top: number; items: EditMenuItem[] } | null = null;
   if (selectedEntry && !dragging) {
     const { event } = selectedEntry;
-    const { top, height } = blockFrame(rangeOf(selectedEntry));
+    const { top, height } = blockFrame(rangeOf(selectedEntry), hourHeight);
     const done = (action: (event: CalendarEvent) => unknown) => () => {
       onSelect(null);
       action(event);
@@ -268,7 +346,7 @@ export const DayPage = memo(function DayPage({
     const above = top - EDIT_MENU_HEIGHT - 10;
     menu = { top: above >= 0 ? above : top + height + 10, items };
   } else if (pasteMinute != null) {
-    const top = TIMELINE_PADDING + (pasteMinute / 60) * HOUR_HEIGHT - EDIT_MENU_HEIGHT - 10;
+    const top = TIMELINE_PADDING + (pasteMinute / 60) * hourHeight - EDIT_MENU_HEIGHT - 10;
     const at = dateAtMinute(pasteMinute);
     const close = (action: () => unknown) => () => {
       setPasteMinute(null);
@@ -305,6 +383,7 @@ export const DayPage = memo(function DayPage({
                 key={reminder.key}
                 reminder={reminder}
                 onToggle={onToggleReminder}
+                onPress={onPressReminder}
                 theme={theme}
               />
             ))}
@@ -312,90 +391,113 @@ export const DayPage = memo(function DayPage({
         </View>
       ) : null}
 
-      <ScrollView
-        contentOffset={initialOffset}
-        onScroll={(e) => onScrollY(e.nativeEvent.contentOffset.y)}
-        scrollEventThrottle={32}
-        scrollEnabled={!dragging}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={{ paddingBottom: bottom }}
-      >
-        <View style={{ height: 24 * HOUR_HEIGHT + TIMELINE_PADDING * 2 }}>
-          {/* Long-press empty space to create an event. It's a layer behind the timeline rather
+      {/* The pinch is detected on this wrapper so its focal point is relative to what's visible. */}
+      <GestureDetector gesture={pinch}>
+        <View collapsable={false} style={styles.viewport}>
+          <ScrollView
+            ref={scrollRef}
+            contentOffset={initialOffset}
+            onScroll={(e) => {
+              scrollY.current = e.nativeEvent.contentOffset.y;
+              onScrollY(e.nativeEvent.contentOffset.y);
+            }}
+            scrollEventThrottle={32}
+            scrollEnabled={!dragging && !pinching}
+            showsVerticalScrollIndicator={false}
+            contentContainerStyle={{ paddingBottom: bottom }}
+          >
+            <View style={{ height: 24 * hourHeight + TIMELINE_PADDING * 2 }}>
+              {/* Long-press empty space to create an event. It's a layer behind the timeline rather
               than a wrapper, so it doesn't fold the events into one accessibility element, and
               locationY is always relative to the timeline itself. */}
-          <Pressable
-            accessible={false}
-            style={StyleSheet.absoluteFill}
-            onPress={onPressEmpty}
-            onLongPress={onLongPress}
-            delayLongPress={LONG_PRESS_MS}
-          />
-          <HourGrid theme={theme} />
-          <View
-            pointerEvents="box-none"
-            style={[styles.events, { left: GUTTER, width: columnWidth }]}
-          >
-            {timed.map((entry) =>
-              entry.kind === 'event' ? (
-                <EventBlock
-                  key={entry.key}
-                  entry={entry}
-                  range={rangeOf(entry)}
-                  selected={isSelected(entry.key)}
-                  lifted={activeDraft?.key === entry.key && dragging}
-                  holdToDrag={
-                    activeDraft?.key === entry.key && dragging
-                      ? !activeDraft.fromSelected
-                      : !isSelected(entry.key)
-                  }
-                  draggable={canDrag(entry.event, startOfDay(date))}
-                  width={columnWidth}
+              <Pressable
+                accessible={false}
+                style={StyleSheet.absoluteFill}
+                onPress={onPressEmpty}
+                onLongPress={onLongPress}
+                delayLongPress={LONG_PRESS_MS}
+              />
+              <HourGrid theme={theme} hourHeight={hourHeight} />
+              <View
+                pointerEvents="box-none"
+                style={[styles.events, { left: GUTTER, width: columnWidth }]}
+              >
+                {timed.map((entry) =>
+                  entry.kind === 'event' ? (
+                    <EventBlock
+                      key={entry.key}
+                      entry={entry}
+                      range={rangeOf(entry)}
+                      selected={isSelected(entry.key)}
+                      lifted={activeDraft?.key === entry.key && dragging}
+                      holdToDrag={
+                        activeDraft?.key === entry.key && dragging
+                          ? !activeDraft.fromSelected
+                          : !isSelected(entry.key)
+                      }
+                      draggable={canDrag(entry.event, startOfDay(date))}
+                      width={columnWidth}
+                      hourHeight={hourHeight}
+                      theme={theme}
+                      onPress={() => {
+                        if (dragging || Date.now() - lastDragEnd.current < 500) return;
+                        onSelect(null);
+                        onPressEvent(entry.event);
+                      }}
+                      onDragStart={startDrag}
+                      onDrag={updateDrag}
+                      onDragEnd={endDrag}
+                    />
+                  ) : (
+                    <ReminderBlock
+                      key={entry.key}
+                      entry={entry}
+                      width={columnWidth}
+                      hourHeight={hourHeight}
+                      theme={theme}
+                      onToggle={onToggleReminder}
+                      onPress={onPressReminder}
+                    />
+                  ),
+                )}
+              </View>
+              {today ? <NowIndicator theme={theme} hourHeight={hourHeight} /> : null}
+              {activeDraft && dragging ? (
+                <DragTimes
+                  range={activeDraft.range}
+                  date={date}
                   theme={theme}
-                  onPress={() => {
-                    if (dragging || Date.now() - lastDragEnd.current < 500) return;
-                    onSelect(null);
-                    onPressEvent(entry.event);
-                  }}
-                  onDragStart={startDrag}
-                  onDrag={updateDrag}
-                  onDragEnd={endDrag}
+                  hourHeight={hourHeight}
                 />
-              ) : (
-                <ReminderBlock
-                  key={entry.key}
-                  entry={entry}
-                  width={columnWidth}
-                  theme={theme}
-                  onToggle={onToggleReminder}
-                />
-              ),
-            )}
-          </View>
-          {today ? <NowIndicator theme={theme} /> : null}
-          {activeDraft && dragging ? (
-            <DragTimes range={activeDraft.range} date={date} theme={theme} />
-          ) : null}
-          {menu ? <EditMenu top={menu.top} items={menu.items} /> : null}
+              ) : null}
+              {menu ? <EditMenu top={menu.top} items={menu.items} /> : null}
+            </View>
+          </ScrollView>
         </View>
-      </ScrollView>
+      </GestureDetector>
     </View>
   );
 });
 
 type EventEntry = Extract<TimelineEntry, { kind: 'event' }>;
 
-function blockFrame(range: MinuteRange) {
+function blockFrame(range: MinuteRange, hourHeight: number) {
   return {
-    top: TIMELINE_PADDING + (range.startMinute / 60) * HOUR_HEIGHT,
+    top: TIMELINE_PADDING + (range.startMinute / 60) * hourHeight,
     height: Math.max(
       MIN_BLOCK_HEIGHT,
-      ((range.endMinute - range.startMinute) / 60) * HOUR_HEIGHT - 2,
+      ((range.endMinute - range.startMinute) / 60) * hourHeight - 2,
     ),
   };
 }
 
-const HourGrid = memo(function HourGrid({ theme }: { theme: Theme }) {
+const HourGrid = memo(function HourGrid({
+  theme,
+  hourHeight,
+}: {
+  theme: Theme;
+  hourHeight: number;
+}) {
   return (
     <>
       {Array.from({ length: 25 }, (_, hour) => {
@@ -404,7 +506,7 @@ const HourGrid = memo(function HourGrid({ theme }: { theme: Theme }) {
           <View
             key={hour}
             pointerEvents="none"
-            style={[styles.hourRow, { top: TIMELINE_PADDING + hour * HOUR_HEIGHT }]}
+            style={[styles.hourRow, { top: TIMELINE_PADDING + hour * hourHeight }]}
           >
             <Text style={[styles.hourLabel, { color: theme.secondaryText }]}>{label}</Text>
             <View style={[styles.hourLine, { backgroundColor: theme.hourLine }]} />
@@ -418,19 +520,32 @@ const HourGrid = memo(function HourGrid({ theme }: { theme: Theme }) {
 function ReminderBlock({
   entry,
   width,
+  hourHeight,
   theme,
   onToggle,
+  onPress,
 }: {
   entry: PositionedItem<Extract<TimelineEntry, { kind: 'reminder' }>>;
   width: number;
+  hourHeight: number;
   theme: Theme;
   onToggle: (reminder: CalendarReminder) => void;
+  onPress: (reminder: CalendarReminder) => void;
 }) {
   const { reminder } = entry;
   const columnWidth = width / entry.columns;
-  const frame = { ...blockFrame(entry), left: entry.column * columnWidth, width: columnWidth - 2 };
+  const frame = {
+    ...blockFrame(entry, hourHeight),
+    left: entry.column * columnWidth,
+    width: columnWidth - 2,
+  };
   return (
-    <View style={[styles.block, frame, styles.reminderBlock, { borderColor: reminder.color }]}>
+    <Pressable
+      onPress={() => onPress(reminder)}
+      accessibilityRole="button"
+      accessibilityLabel={reminder.title}
+      style={[styles.block, frame, styles.reminderBlock, { borderColor: reminder.color }]}
+    >
       <ReminderCheck reminder={reminder} onToggle={onToggle} />
       <Text
         style={[styles.blockTitle, { color: theme.text }, reminder.completed && styles.completed]}
@@ -438,7 +553,7 @@ function ReminderBlock({
       >
         {reminder.title}
       </Text>
-    </View>
+    </Pressable>
   );
 }
 
@@ -452,16 +567,17 @@ type DragHandlers = {
 function useDragGesture(
   entry: EventEntry,
   mode: DragMode,
-  { enabled, longPress }: { enabled: boolean; longPress: boolean },
+  { enabled, longPress, hourHeight }: { enabled: boolean; longPress: boolean; hourHeight: number },
   handlers: DragHandlers,
 ) {
   // Every new config is re-sent to the native recognizer, which resets it and cancels a drag in
   // progress. So the config only changes with `enabled`/`longPress` (which callers keep steady
   // mid-drag), and the callbacks read the latest props from a ref.
-  const latest = useRef({ entry, handlers });
+  const latest = useRef({ entry, handlers, hourHeight });
   useEffect(() => {
-    latest.current = { entry, handlers };
+    latest.current = { entry, handlers, hourHeight };
   });
+  const minutes = (translationY: number) => (translationY / latest.current.hourHeight) * 60;
   const config = useMemo<PanGestureConfig>(
     () => ({
       enabled,
@@ -471,15 +587,11 @@ function useDragGesture(
       minDistance: longPress ? undefined : 2,
       onActivate: () => latest.current.handlers.onDragStart(latest.current.entry),
       onUpdate: (e) =>
-        latest.current.handlers.onDrag(
-          latest.current.entry,
-          mode,
-          (e.translationY / HOUR_HEIGHT) * 60,
-        ),
+        latest.current.handlers.onDrag(latest.current.entry, mode, minutes(e.translationY)),
       onDeactivate: (e) => {
         const { entry, handlers } = latest.current;
         // The lift can carry movement that never got its own update.
-        if (!e.canceled) handlers.onDrag(entry, mode, (e.translationY / HOUR_HEIGHT) * 60);
+        if (!e.canceled) handlers.onDrag(entry, mode, minutes(e.translationY));
         handlers.onDragEnd(entry, e.canceled);
       },
     }),
@@ -496,6 +608,7 @@ function EventBlock({
   holdToDrag,
   draggable,
   width,
+  hourHeight,
   theme,
   onPress,
   ...handlers
@@ -507,15 +620,23 @@ function EventBlock({
   holdToDrag: boolean;
   draggable: boolean;
   width: number;
+  hourHeight: number;
   theme: Theme;
   onPress: () => void;
 } & DragHandlers) {
   const { event } = entry;
-  const { top, height } = blockFrame(range);
+  const { top, height } = blockFrame(range, hourHeight);
   const columnWidth = width / entry.columns;
   const frame = { top, height, left: entry.column * columnWidth, width: columnWidth - 2 };
-  const compact = height < 40;
   const editing = selected && draggable;
+  // The block's position already says when it is, so it shows the title, plus the location when
+  // there's a spare line for it.
+  const lines = Math.floor((height - BLOCK_PADDING * 2) / TITLE_LINE);
+  const showLocation = !!event.location && height - BLOCK_PADDING * 2 >= TITLE_LINE + SUBTITLE_LINE;
+  const titleLines = Math.max(
+    1,
+    showLocation ? Math.floor((height - BLOCK_PADDING * 2 - SUBTITLE_LINE) / TITLE_LINE) : lines,
+  );
   // While dragging (or saving), show the time it's moving to.
   const start = new Date(event.start.getTime() + (range.startMinute - entry.startMinute) * 60_000);
 
@@ -523,16 +644,21 @@ function EventBlock({
   const move = useDragGesture(
     entry,
     'move',
-    { enabled: lifted || !selected || draggable, longPress: holdToDrag },
+    { enabled: lifted || !selected || draggable, longPress: holdToDrag, hourHeight },
     handlers,
   );
   const resizeStart = useDragGesture(
     entry,
     'start',
-    { enabled: editing, longPress: false },
+    { enabled: editing, longPress: false, hourHeight },
     handlers,
   );
-  const resizeEnd = useDragGesture(entry, 'end', { enabled: editing, longPress: false }, handlers);
+  const resizeEnd = useDragGesture(
+    entry,
+    'end',
+    { enabled: editing, longPress: false, hourHeight },
+    handlers,
+  );
 
   const textColor = selected ? '#FFFFFF' : theme.text;
 
@@ -563,18 +689,12 @@ function EventBlock({
               : { backgroundColor: withAlpha(event.color, 0.22), borderLeftColor: event.color },
           ]}
         >
-          <Text style={[styles.blockTitle, { color: textColor }]} numberOfLines={compact ? 1 : 2}>
+          <Text style={[styles.eventTitle, { color: textColor }]} numberOfLines={titleLines}>
             {event.title}
-            {compact ? <Text style={styles.blockMeta}> {formatTime(start)}</Text> : null}
           </Text>
-          {!compact && event.location ? (
-            <Text style={[styles.blockMeta, { color: textColor }]} numberOfLines={1}>
+          {showLocation ? (
+            <Text style={[styles.eventSubtitle, { color: textColor }]} numberOfLines={1}>
               {event.location}
-            </Text>
-          ) : null}
-          {!compact ? (
-            <Text style={[styles.blockMeta, { color: textColor }]} numberOfLines={1}>
-              {formatTime(start)}
             </Text>
           ) : null}
         </Pressable>
@@ -608,7 +728,17 @@ function EventBlock({
 }
 
 /** While dragging, the gutter shows the times the event would start and end at. */
-function DragTimes({ range, date, theme }: { range: MinuteRange; date: Date; theme: Theme }) {
+function DragTimes({
+  range,
+  date,
+  theme,
+  hourHeight,
+}: {
+  range: MinuteRange;
+  date: Date;
+  theme: Theme;
+  hourHeight: number;
+}) {
   const at = (minute: number) => {
     const d = startOfDay(date);
     d.setMinutes(minute);
@@ -626,7 +756,7 @@ function DragTimes({ range, date, theme }: { range: MinuteRange; date: Date; the
           style={[
             styles.dragTime,
             {
-              top: TIMELINE_PADDING + (minute / 60) * HOUR_HEIGHT - 8,
+              top: TIMELINE_PADDING + (minute / 60) * hourHeight - 8,
               color: theme.text,
               backgroundColor: theme.background,
             },
@@ -666,14 +796,21 @@ function ReminderCheck({
 function ReminderChip({
   reminder,
   onToggle,
+  onPress,
   theme,
 }: {
   reminder: CalendarReminder;
   onToggle: (reminder: CalendarReminder) => void;
+  onPress: (reminder: CalendarReminder) => void;
   theme: Theme;
 }) {
   return (
-    <View style={[styles.allDayEvent, styles.reminderChip, { borderColor: reminder.color }]}>
+    <Pressable
+      onPress={() => onPress(reminder)}
+      accessibilityRole="button"
+      accessibilityLabel={reminder.title}
+      style={[styles.allDayEvent, styles.reminderChip, { borderColor: reminder.color }]}
+    >
       <ReminderCheck reminder={reminder} onToggle={onToggle} />
       <Text
         style={[styles.allDayTitle, { color: theme.text }, reminder.completed && styles.completed]}
@@ -681,17 +818,17 @@ function ReminderChip({
       >
         {reminder.title}
       </Text>
-    </View>
+    </Pressable>
   );
 }
 
-function NowIndicator({ theme }: { theme: Theme }) {
+function NowIndicator({ theme, hourHeight }: { theme: Theme; hourHeight: number }) {
   const [now, setNow] = useState(() => new Date());
   useEffect(() => {
     const id = setInterval(() => setNow(new Date()), 30_000);
     return () => clearInterval(id);
   }, []);
-  const top = TIMELINE_PADDING + (minutesIntoDay(now) / 60) * HOUR_HEIGHT;
+  const top = TIMELINE_PADDING + (minutesIntoDay(now) / 60) * hourHeight;
   return (
     <View pointerEvents="none" style={[styles.nowRow, { top: top - 8 }]}>
       <Text style={[styles.nowLabel, { color: theme.tint, backgroundColor: theme.background }]}>
@@ -729,6 +866,7 @@ const styles = StyleSheet.create({
   },
   hourLabel: { width: GUTTER, fontSize: 11, textAlign: 'right', paddingRight: 8 },
   hourLine: { flex: 1, height: StyleSheet.hairlineWidth },
+  viewport: { flex: 1 },
   events: { position: 'absolute', top: 0, bottom: 0 },
   eventFrame: { position: 'absolute', borderRadius: 4 },
   lifted: {
@@ -769,7 +907,7 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     borderLeftWidth: 3,
     paddingHorizontal: 5,
-    paddingVertical: 2,
+    paddingVertical: BLOCK_PADDING,
     overflow: 'hidden',
   },
   reminderBlock: {
@@ -780,7 +918,8 @@ const styles = StyleSheet.create({
     borderLeftWidth: 1,
   },
   blockTitle: { fontSize: 12, fontWeight: '600', flexShrink: 1 },
-  blockMeta: { fontSize: 11, fontWeight: '400', opacity: 0.8 },
+  eventTitle: { fontSize: 12, lineHeight: TITLE_LINE, fontWeight: '600' },
+  eventSubtitle: { fontSize: 11, lineHeight: SUBTITLE_LINE, opacity: 0.8 },
   completed: { textDecorationLine: 'line-through', opacity: 0.5 },
   nowRow: {
     position: 'absolute',

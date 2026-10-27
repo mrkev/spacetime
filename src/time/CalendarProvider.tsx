@@ -64,6 +64,8 @@ type CalendarContextValue = {
   getDay: (date: Date) => DayItems | undefined;
   /** Kicks off loading the months around `date` (no-op if cached). */
   ensureMonths: (date: Date, radius?: number) => void;
+  /** A loaded reminder (from an open list or a loaded month) by ID. */
+  getReminder: (id: string) => CalendarReminder | undefined;
   /** Incomplete reminders across all lists (iOS only). */
   openReminders: CalendarReminder[];
   reminderLists: Calendar.ExpoCalendar[];
@@ -358,6 +360,21 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
     [version],
   );
 
+  const getReminder = useCallback(
+    (id: string) => {
+      for (const month of months.current.values()) {
+        for (const day of month.values()) {
+          const found = day.reminders.find((r) => r.key === id);
+          if (found) return found;
+        }
+      }
+      return openReminders.find((r) => r.key === id);
+    },
+    // Months live in a ref; `version` changes whenever they do.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [openReminders, version],
+  );
+
   const defaultEventCalendar = useCallback(() => {
     if (Platform.OS === 'ios') {
       try {
@@ -397,6 +414,7 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
       requestAccess,
       getDay,
       ensureMonths,
+      getReminder,
       openReminders,
       reminderLists,
       defaultEventCalendar,
@@ -411,6 +429,7 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
       requestAccess,
       getDay,
       ensureMonths,
+      getReminder,
       openReminders,
       reminderLists,
       defaultEventCalendar,

@@ -1,4 +1,5 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
+import Storage from 'expo-sqlite/kv-store';
 import { useCallback, useMemo, useRef, useState } from 'react';
 import {
   FlatList,
@@ -29,25 +30,48 @@ import {
 import { useTheme, type Theme } from '../../../lib/theme';
 import { AccessBanner } from '../../../time/AccessBanner';
 import { useCalendar } from '../../../time/CalendarProvider';
-import { DayPage, HOUR_HEIGHT } from '../../../time/DayPage';
+import { DayPage, HOUR_HEIGHT, MAX_HOUR_HEIGHT, MIN_HOUR_HEIGHT } from '../../../time/DayPage';
 import { useTimeActions } from '../../../time/actions';
 
 const DAYS_EACH_WAY = 730;
 const WEEK_STARTS_ON = 0;
+const ZOOM_KEY = 'spacetime.time.hourHeight';
+
+/** The pinch zoom you last left the day view at. */
+function loadHourHeight(): number {
+  try {
+    const saved = Number(Storage.getItemSync(ZOOM_KEY));
+    return saved >= MIN_HOUR_HEIGHT && saved <= MAX_HOUR_HEIGHT ? saved : HOUR_HEIGHT;
+  } catch {
+    return HOUR_HEIGHT;
+  }
+}
 
 export default function DayScreen() {
   const theme = useTheme();
   const { width } = useWindowDimensions();
   const params = useLocalSearchParams<{ date?: string }>();
   const { toggleReminder } = useCalendar();
-  const { createEvent, openEvent, showAddMenu } = useTimeActions();
+  const { createEvent, openEvent, openReminder, showAddMenu } = useTimeActions();
 
   // Pages are indexed relative to a fixed anchor so indices stay stable while swiping.
   const anchor = useMemo(() => startOfDay(parseDayKey(params.date) ?? new Date()), [params.date]);
   const [selected, setSelected] = useState(anchor);
   // The event being edited (long-pressed), and whether it's mid-drag.
   const [selection, setSelection] = useState<{ key: string; day: string } | null>(null);
-  const [dragging, setDragging] = useState(false);
+  // Whether an event is being dragged or the day pinched, so the pager holds still.
+  const [gestureActive, setGestureActive] = useState(false);
+  const [hourHeight, setHourHeight] = useState(loadHourHeight);
+  const hourHeightRef = useRef(hourHeight);
+  const zoomTo = useCallback((height: number) => {
+    hourHeightRef.current = height;
+    setHourHeight(height);
+  }, []);
+  // Pages re-render when the selection or zoom changes.
+  const pagerState = useMemo(() => ({ selection, hourHeight }), [selection, hourHeight]);
+  const saveZoom = useCallback(() => {
+    Storage.setItemSync(ZOOM_KEY, String(hourHeightRef.current));
+  }, []);
 
   const dayPager = useRef<FlatList<number>>(null);
   const weekPager = useRef<FlatList<number>>(null);
@@ -56,7 +80,7 @@ export default function DayScreen() {
   const scrollOffsetRef = useRef(
     Math.max(
       0,
-      ((isSameDay(anchor, new Date()) ? minutesIntoDay(new Date()) / 60 : 8) - 1) * HOUR_HEIGHT,
+      ((isSameDay(anchor, new Date()) ? minutesIntoDay(new Date()) / 60 : 8) - 1) * hourHeight,
     ),
   );
 
@@ -184,8 +208,8 @@ export default function DayScreen() {
         initialNumToRender={1}
         maxToRenderPerBatch={1}
         onMomentumScrollEnd={onDayPageEnd}
-        scrollEnabled={!dragging}
-        extraData={selection}
+        scrollEnabled={!gestureActive}
+        extraData={pagerState}
         style={styles.pager}
         renderItem={({ item }) => {
           const date = dayForIndex(item);
@@ -198,10 +222,14 @@ export default function DayScreen() {
               onScrollY={onScrollY}
               onPressEvent={openEvent}
               onToggleReminder={toggleReminder}
+              onPressReminder={openReminder}
               onCreateAt={createEvent}
               selectedKey={selection?.day === day ? selection.key : null}
               onSelect={(key) => setSelection(key ? { key, day } : null)}
-              onDraggingChange={setDragging}
+              onGestureActive={setGestureActive}
+              hourHeight={hourHeight}
+              onZoom={zoomTo}
+              onZoomEnd={saveZoom}
             />
           );
         }}
