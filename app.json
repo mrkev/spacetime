@@ -9,13 +9,14 @@
     "userInterfaceStyle": "automatic",
     "ios": {
       "supportsTablet": true,
+      "icon": "./assets/spacetime.icon",
       "bundleIdentifier": "com.mrkev.spacetime",
       "appleTeamId": "J8ZU83TC57"
     },
     "android": {
       "package": "com.mrkev.spacetime",
       "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
+        "backgroundColor": "#000000",
         "foregroundImage": "./assets/android-icon-foreground.png",
         "backgroundImage": "./assets/android-icon-background.png",
         "monochromeImage": "./assets/android-icon-monochrome.png"
