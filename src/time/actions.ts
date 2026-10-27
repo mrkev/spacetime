@@ -38,12 +38,20 @@ export function useTimeActions() {
 
   const openEvent = useCallback(
     async (event: CalendarEvent) => {
-      const result = await event.source.openInCalendar({
-        instanceStartDate: event.start,
-        allowsEditing: true,
-        allowsCalendarPreview: true,
-      });
-      if (result.action !== 'canceled') refresh();
+      try {
+        const result = await event.source.openInCalendar({
+          // Unlike its other methods, expo-calendar doesn't serialize Dates here, and the native
+          // side only accepts a string or number.
+          instanceStartDate: event.start.toISOString(),
+          allowsEditing: true,
+          allowsCalendarPreview: true,
+        });
+        if (result.action !== 'canceled') refresh();
+      } catch (error) {
+        console.warn('[calendar] failed to open event', error);
+        Alert.alert('Couldn’t Open Event', 'It may have been deleted. Try again in a moment.');
+        refresh();
+      }
     },
     [refresh],
   );
