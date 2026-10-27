@@ -27,6 +27,7 @@ import {
   startOfWeek,
   weekdayLabels,
 } from '../../../lib/dates';
+import { useNowAction } from '../../../lib/nowAction';
 import { useTheme, type Theme } from '../../../lib/theme';
 import { AccessBanner } from '../../../time/AccessBanner';
 import { useCalendar } from '../../../time/CalendarProvider';
@@ -123,6 +124,8 @@ export default function DayScreen() {
     [indexForDay, indexForWeek, dayIndices.length],
   );
 
+  useNowAction('time', () => select(new Date()));
+
   const onDayPageEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const index = Math.round(e.nativeEvent.contentOffset.x / width);
     const day = dayForIndex(index);
@@ -148,7 +151,6 @@ export default function DayScreen() {
           title: formatMonth(selected),
           headerRight: () => (
             <View style={styles.headerRight}>
-              <HeaderButton label="Today" onPress={() => select(new Date())} />
               <HeaderButton
                 icon={icons.plus}
                 accessibilityLabel="Add"

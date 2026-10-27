@@ -7,14 +7,17 @@ export type TimedItem = {
 
 export type PositionedItem<T> = T & { column: number; columns: number };
 
-/** Short items still take up this much room, so they don't visually collide. */
+/** Short items still take up this much room by default, so they don't visually collide. */
 const MIN_VISUAL_MINUTES = 20;
 
 /**
  * Lays out overlapping items side by side, the way Calendar does: items that overlap form a
  * cluster, each item takes the first free column, and every item in a cluster shares its width.
  */
-export function layoutDay<T extends TimedItem>(items: T[]): PositionedItem<T>[] {
+export function layoutDay<T extends TimedItem>(
+  items: T[],
+  minVisualMinutes = MIN_VISUAL_MINUTES,
+): PositionedItem<T>[] {
   const sorted = [...items].sort(
     (a, b) => a.startMinute - b.startMinute || b.endMinute - a.endMinute,
   );
@@ -31,7 +34,7 @@ export function layoutDay<T extends TimedItem>(items: T[]): PositionedItem<T>[] 
   };
 
   for (const item of sorted) {
-    const visualEnd = Math.max(item.endMinute, item.startMinute + MIN_VISUAL_MINUTES);
+    const visualEnd = Math.max(item.endMinute, item.startMinute + minVisualMinutes);
     if (item.startMinute >= clusterEnd) flush();
 
     let column = columnEnds.findIndex((end) => end <= item.startMinute);

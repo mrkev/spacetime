@@ -46,7 +46,8 @@ export const MIN_HOUR_HEIGHT = 24;
 export const MAX_HOUR_HEIGHT = 180;
 const GUTTER = 56;
 export const TIMELINE_PADDING = 12;
-const REMINDER_MINUTES = 30;
+/** Reminders are points in time, so they stay this tall at any zoom. */
+const REMINDER_HEIGHT = 26;
 const MIN_BLOCK_HEIGHT = 20;
 /** How long to hold an event before it lifts for dragging. */
 const LONG_PRESS_MS = 350;
@@ -146,17 +147,20 @@ export const DayPage = memo(function DayPage({
         allDayReminders.push(reminder);
         continue;
       }
+      // The time the block covers at this zoom, so overlaps are laid out side by side.
       const startMinute = minutesIntoDay(reminder.due);
       timed.push({
         kind: 'reminder',
         key: reminder.key,
         reminder,
         startMinute,
-        endMinute: Math.min(24 * 60, startMinute + REMINDER_MINUTES),
+        endMinute: startMinute + ((REMINDER_HEIGHT + 2) / hourHeight) * 60,
       });
     }
-    return { allDayEvents, allDayReminders, timed: layoutDay(timed) };
-  }, [items, date]);
+    // Short blocks are drawn at a minimum height in points, so lay them out with the same room.
+    const minMinutes = ((MIN_BLOCK_HEIGHT + 2) / hourHeight) * 60;
+    return { allDayEvents, allDayReminders, timed: layoutDay(timed, minMinutes) };
+  }, [items, date, hourHeight]);
 
   const today = isToday(date);
   // Captured once so re-renders don't fight the user's scrolling.
@@ -535,7 +539,8 @@ function ReminderBlock({
   const { reminder } = entry;
   const columnWidth = width / entry.columns;
   const frame = {
-    ...blockFrame(entry, hourHeight),
+    top: blockFrame(entry, hourHeight).top,
+    height: REMINDER_HEIGHT,
     left: entry.column * columnWidth,
     width: columnWidth - 2,
   };

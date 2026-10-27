@@ -51,4 +51,11 @@ describe('layoutDay', () => {
     expect(result.long.column).toBe(0);
     expect(result.short.column).toBe(1);
   });
+
+  it('gives short items room for their drawn height when zoomed out', () => {
+    // Five-minute items ten minutes apart only collide once their minimum height covers the gap.
+    const items = [item('a', 540, 545), item('b', 550, 555)];
+    expect(byKey(layoutDay(items, 5)).b).toMatchObject({ column: 0, columns: 1 });
+    expect(byKey(layoutDay(items, 30)).b).toMatchObject({ column: 1, columns: 2 });
+  });
 });

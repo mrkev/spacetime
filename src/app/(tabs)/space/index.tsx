@@ -17,6 +17,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, icons } from '../../../components/Icon';
 import { describeCoordinate, searchAddress, type Coordinate } from '../../../lib/geo';
+import { useNowAction } from '../../../lib/nowAction';
 import { useTheme, withAlpha, type Theme } from '../../../lib/theme';
 import {
   REMINDERS_COLLECTION_ID,
@@ -119,6 +120,9 @@ export default function SpaceScreen() {
     }).catch(() => null);
     if (position) focusOn([position.coords]);
   };
+
+  // The tab bar's floating "Here" button.
+  useNowAction('space', goToMyLocation);
 
   const runSearch = async () => {
     Keyboard.dismiss();
@@ -300,18 +304,6 @@ export default function SpaceScreen() {
           </Text>
         </View>
       )}
-
-      <Pressable
-        onPress={goToMyLocation}
-        style={[
-          styles.locate,
-          cardStyle(theme),
-          { bottom: insets.bottom + (result ? 96 : 16) },
-        ]}
-        accessibilityLabel="Show my location"
-      >
-        <Icon name={icons.locationFill} color={theme.blue} size={20} />
-      </Pressable>
     </View>
   );
 }
@@ -429,13 +421,4 @@ const styles = StyleSheet.create({
     borderRadius: 16,
   },
   hintText: { fontSize: 13, fontWeight: '500' },
-  locate: {
-    position: 'absolute',
-    right: 12,
-    width: 44,
-    height: 44,
-    borderRadius: 22,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
 });

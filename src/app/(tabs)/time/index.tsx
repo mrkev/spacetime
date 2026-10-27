@@ -24,6 +24,7 @@ import {
   startOfMonth,
   weekdayLabels,
 } from '../../../lib/dates';
+import { useNowAction } from '../../../lib/nowAction';
 import { useTheme, type Theme } from '../../../lib/theme';
 import { AccessBanner } from '../../../time/AccessBanner';
 import { useCalendar, type DayItems } from '../../../time/CalendarProvider';
@@ -112,6 +113,7 @@ export default function MonthScreen() {
   const scrollToToday = useCallback(() => {
     listRef.current?.scrollToIndex({ index: monthsBefore, animated: true });
   }, [monthsBefore]);
+  useNowAction('time', scrollToToday);
 
   // Add earlier months as the user nears the top; maintainVisibleContentPosition keeps what's on
   // screen in place while they're inserted above it.
@@ -134,7 +136,6 @@ export default function MonthScreen() {
         options={{
           title: String(visibleYear),
           headerBackTitle: String(visibleYear),
-          headerLeft: () => <HeaderButton label="Today" onPress={scrollToToday} />,
           headerRight: () => (
             <View style={styles.headerRight}>
               <HeaderButton
