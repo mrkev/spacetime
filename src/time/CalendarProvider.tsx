@@ -33,6 +33,9 @@ export type CalendarEvent = {
   color: string;
   calendarTitle: string;
   location: string | null;
+  /** False for read-only calendars (subscriptions, birthdays, invitations we can't change). */
+  editable: boolean;
+  recurring: boolean;
   source: Calendar.ExpoCalendarEvent;
 };
 
@@ -66,6 +69,8 @@ type CalendarContextValue = {
   reminderLists: Calendar.ExpoCalendar[];
   /** The calendar new events go into by default. */
   defaultEventCalendar: () => Calendar.ExpoCalendar | null;
+  /** A writable event calendar by ID. */
+  writableCalendar: (id: string) => Calendar.ExpoCalendar | null;
   toggleReminder: (reminder: CalendarReminder) => Promise<void>;
   /** Drops all cached data and reloads what's on screen. */
   refresh: () => void;
@@ -74,6 +79,11 @@ type CalendarContextValue = {
 };
 
 const CalendarContext = createContext<CalendarContextValue | null>(null);
+
+/** Unique per occurrence, so recurring events get distinct keys. */
+export function eventKey(id: string, start: Date): string {
+  return `${id}:${start.getTime()}`;
+}
 
 const EMPTY_DAY: DayItems = { events: [], reminders: [] };
 const supportsReminders = Platform.OS === 'ios';
@@ -232,7 +242,7 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
             if (!eventStart || !eventEnd) continue;
             const calendar = calendarsById.get(e.calendarId);
             const event: CalendarEvent = {
-              key: `${e.id}:${eventStart.getTime()}`,
+              key: eventKey(e.id, eventStart),
               title: e.title || 'New Event',
               start: eventStart,
               end: eventEnd,
@@ -240,6 +250,8 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
               color: calendar?.color ?? '#007AFF',
               calendarTitle: calendar?.title ?? '',
               location: e.location,
+              editable: !!calendar?.allowsModifications,
+              recurring: e.recurrenceRule != null,
               source: e,
             };
             // Add multi-day events to every day they touch (within this month).
@@ -361,6 +373,14 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
     );
   }, [eventCalendars]);
 
+  const writableCalendar = useCallback(
+    (id: string) => {
+      const calendar = calendarsById.get(id);
+      return calendar?.allowsModifications ? calendar : null;
+    },
+    [calendarsById],
+  );
+
   const toggleReminder = useCallback(
     async (reminder: CalendarReminder) => {
       // EventKit sets or clears the completion date along with the flag.
@@ -380,6 +400,7 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
       openReminders,
       reminderLists,
       defaultEventCalendar,
+      writableCalendar,
       toggleReminder,
       refresh,
       version,
@@ -393,6 +414,7 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
       openReminders,
       reminderLists,
       defaultEventCalendar,
+      writableCalendar,
       toggleReminder,
       refresh,
       version,

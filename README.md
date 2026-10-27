@@ -40,7 +40,7 @@ src/components/, src/lib/    Shared UI and helpers
 
 ## Notes
 
-- **Events** are created and edited with the system event editor, so every Calendar field (invitees, alerts, recurrence) is available.
+- **Events** are created and edited with the system event editor, so every Calendar field (invitees, alerts, recurrence) is available. In the day view, touch and hold an event to drag it to a new time (in 15-minute steps), drag its handles to change the start or end, or use the Cut / Copy / Delete / Duplicate menu. After copying, touch and hold an empty slot to paste. Changes to repeating events ask whether they apply to this event only or all future ones.
 - **Dated reminders** use Apple Reminders and are iOS-only; Android has no system reminders API. Location reminders work on both.
 - **Location reminders** need location access set to *Always* plus notification permission. iOS monitors at most 20 regions per app, so Spacetime registers the 20 closest to you and re-picks them whenever the app opens.
 - Geofence events only notify on a real transition (outside → inside for "arriving"), so creating a reminder where you're standing doesn't fire immediately. One-off reminders complete after they fire; repeating ones have a 10-minute cooldown to avoid GPS jitter at the edge.

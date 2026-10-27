@@ -1,5 +1,6 @@
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
+import Storage from 'expo-sqlite/kv-store';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -25,13 +26,22 @@ import {
 } from '../../../space/store';
 
 const ALL = 'all';
-// San Francisco, until we know where the user is.
-const FALLBACK_REGION: Region = {
-  latitude: 37.7749,
-  longitude: -122.4194,
-  latitudeDelta: 0.08,
-  longitudeDelta: 0.08,
-};
+const REGION_KEY = 'spacetime.space.region.v1';
+const USER_DELTA = 0.03;
+
+/** Where the map was last left, so it opens near the user even before we have a location fix. */
+function loadRegion(): Region | undefined {
+  try {
+    const saved = Storage.getItemSync(REGION_KEY);
+    return saved ? (JSON.parse(saved) as Region) : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+function saveRegion(region: Region) {
+  Storage.setItemSync(REGION_KEY, JSON.stringify(region));
+}
 
 type SearchResult = Coordinate & { name: string; address: string };
 
@@ -46,6 +56,10 @@ export default function SpaceScreen() {
   const [searching, setSearching] = useState(false);
   const [result, setResult] = useState<SearchResult | null>(null);
   const [locationGranted, setLocationGranted] = useState(false);
+  const [initialRegion] = useState(loadRegion);
+  const [mapReady, setMapReady] = useState(false);
+  const [userRegion, setUserRegion] = useState<Region | null>(null);
+  const centeredOnUser = useRef(false);
 
   const collectionsById = useMemo(
     () => new Map(collections.map((c) => [c.id, c] as const)),
@@ -61,23 +75,26 @@ export default function SpaceScreen() {
     [places, filter],
   );
 
-  // Center on the user once we have permission.
+  // Find the user once we have permission.
   useEffect(() => {
     (async () => {
       const { granted } = await Location.requestForegroundPermissionsAsync();
       setLocationGranted(granted);
       if (!granted) return;
       const position =
-        (await Location.getLastKnownPositionAsync()) ??
+        (await Location.getLastKnownPositionAsync({ maxAge: 10 * 60_000 })) ??
         (await Location.getCurrentPositionAsync({ accuracy: Location.Accuracy.Balanced }));
-      if (position) {
-        mapRef.current?.animateToRegion(
-          { ...position.coords, latitudeDelta: 0.03, longitudeDelta: 0.03 },
-          0,
-        );
-      }
+      const { latitude, longitude } = position.coords;
+      setUserRegion({ latitude, longitude, latitudeDelta: USER_DELTA, longitudeDelta: USER_DELTA });
     })().catch((error) => console.warn('[space] location failed', error));
   }, []);
+
+  // The map ignores camera changes until it's ready, so center on the user once both are in.
+  useEffect(() => {
+    if (!mapReady || !userRegion || centeredOnUser.current) return;
+    centeredOnUser.current = true;
+    mapRef.current?.animateToRegion(userRegion, 0);
+  }, [mapReady, userRegion]);
 
   const focusOn = (coords: Coordinate[]) => {
     if (coords.length === 0) return;
@@ -142,7 +159,9 @@ export default function SpaceScreen() {
       <MapView
         ref={mapRef}
         style={StyleSheet.absoluteFill}
-        initialRegion={FALLBACK_REGION}
+        initialRegion={initialRegion}
+        onMapReady={() => setMapReady(true)}
+        onRegionChangeComplete={saveRegion}
         showsUserLocation={locationGranted}
         showsMyLocationButton={false}
         showsCompass={false}

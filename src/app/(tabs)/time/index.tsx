@@ -8,6 +8,8 @@ import {
   View,
   useWindowDimensions,
   type ListViewToken,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
 } from 'react-native';
 
 import { HeaderButton } from '../../../components/HeaderButton';
@@ -27,7 +29,10 @@ import { AccessBanner } from '../../../time/AccessBanner';
 import { useCalendar, type DayItems } from '../../../time/CalendarProvider';
 import { useTimeActions } from '../../../time/actions';
 
-const MONTHS_BEFORE = 120;
+// The list starts at the current month and grows upward as you scroll back, so opening it never
+// depends on jumping to a far-off scroll offset.
+const MAX_MONTHS_BEFORE = 120;
+const PREPEND_MONTHS = 24;
 const MONTHS_AFTER = 120;
 const TITLE_HEIGHT = 48;
 const WEEK_HEIGHT = 64;
@@ -47,10 +52,13 @@ export default function MonthScreen() {
   const today = useMemo(() => new Date(), []);
   const baseMonth = useMemo(() => startOfMonth(today), [today]);
   const [visibleYear, setVisibleYear] = useState(today.getFullYear());
+  const [monthsBefore, setMonthsBefore] = useState(0);
+  const userScrolled = useRef(false);
 
-  const indices = useMemo(
-    () => Array.from({ length: MONTHS_BEFORE + MONTHS_AFTER + 1 }, (_, i) => i),
-    [],
+  // Each item is a month's offset from the current one, so keys stay put as months are prepended.
+  const monthOffsets = useMemo(
+    () => Array.from({ length: monthsBefore + MONTHS_AFTER + 1 }, (_, i) => i - monthsBefore),
+    [monthsBefore],
   );
 
   // Month heights vary (4–6 weeks), so precompute offsets for getItemLayout.
@@ -58,14 +66,14 @@ export default function MonthScreen() {
     const offsets: number[] = [];
     const heights: number[] = [];
     let offset = 0;
-    for (const i of indices) {
-      const height = TITLE_HEIGHT + weeksInMonth(addMonths(baseMonth, i - MONTHS_BEFORE)) * WEEK_HEIGHT;
+    for (const i of monthOffsets) {
+      const height = TITLE_HEIGHT + weeksInMonth(addMonths(baseMonth, i)) * WEEK_HEIGHT;
       offsets.push(offset);
       heights.push(height);
       offset += height;
     }
     return { offsets, heights };
-  }, [indices, baseMonth]);
+  }, [monthOffsets, baseMonth]);
 
   const getItemLayout = useCallback(
     (_: unknown, index: number) => ({
@@ -89,7 +97,7 @@ export default function MonthScreen() {
       ({ viewableItems }: { viewableItems: ListViewToken[] }) => {
         const first = viewableItems.find((v) => v.isViewable);
         if (first?.item == null) return;
-        const month = addMonths(baseMonth, (first.item as number) - MONTHS_BEFORE);
+        const month = addMonths(baseMonth, first.item as number);
         visibleMonthRef.current = month;
         setVisibleYear(month.getFullYear());
         ensureMonthsRef.current(month, 2);
@@ -102,8 +110,19 @@ export default function MonthScreen() {
   }, [ensureMonths]);
 
   const scrollToToday = useCallback(() => {
-    listRef.current?.scrollToIndex({ index: MONTHS_BEFORE, animated: true });
-  }, []);
+    listRef.current?.scrollToIndex({ index: monthsBefore, animated: true });
+  }, [monthsBefore]);
+
+  // Add earlier months as the user nears the top; maintainVisibleContentPosition keeps what's on
+  // screen in place while they're inserted above it.
+  const onScroll = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const { contentOffset, layoutMeasurement } = e.nativeEvent;
+    if (!userScrolled.current || monthsBefore >= MAX_MONTHS_BEFORE) return;
+    if (contentOffset.y > layoutMeasurement.height * 2) return;
+    setMonthsBefore((m) =>
+      m === monthsBefore ? Math.min(MAX_MONTHS_BEFORE, m + PREPEND_MONTHS) : m,
+    );
+  };
 
   const openDay = useCallback((date: Date) => {
     router.push({ pathname: '/time/day', params: { date: dayKey(date) } });
@@ -132,11 +151,16 @@ export default function MonthScreen() {
       <AccessBanner />
       <FlatList
         ref={listRef}
-        data={indices}
+        data={monthOffsets}
         keyExtractor={(i) => String(i)}
         extraData={version}
-        initialScrollIndex={MONTHS_BEFORE}
         getItemLayout={getItemLayout}
+        maintainVisibleContentPosition={{ minIndexForVisible: 0 }}
+        onScrollBeginDrag={() => {
+          userScrolled.current = true;
+        }}
+        onScroll={onScroll}
+        scrollEventThrottle={64}
         onViewableItemsChanged={onViewableItemsChanged}
         viewabilityConfig={{ itemVisiblePercentThreshold: 30 }}
         windowSize={5}
@@ -145,7 +169,7 @@ export default function MonthScreen() {
         showsVerticalScrollIndicator={false}
         renderItem={({ item }) => (
           <MonthItem
-            month={addMonths(baseMonth, item - MONTHS_BEFORE)}
+            month={addMonths(baseMonth, item)}
             today={today}
             getDay={getDay}
             onPressDay={openDay}

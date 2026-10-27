@@ -15,6 +15,7 @@ import { HeaderButton } from '../../../components/HeaderButton';
 import { icons } from '../../../components/Icon';
 import {
   addDays,
+  dayKey,
   differenceInDays,
   formatFullDate,
   formatMonth,
@@ -44,6 +45,9 @@ export default function DayScreen() {
   // Pages are indexed relative to a fixed anchor so indices stay stable while swiping.
   const anchor = useMemo(() => startOfDay(parseDayKey(params.date) ?? new Date()), [params.date]);
   const [selected, setSelected] = useState(anchor);
+  // The event being edited (long-pressed), and whether it's mid-drag.
+  const [selection, setSelection] = useState<{ key: string; day: string } | null>(null);
+  const [dragging, setDragging] = useState(false);
 
   const dayPager = useRef<FlatList<number>>(null);
   const weekPager = useRef<FlatList<number>>(null);
@@ -60,10 +64,7 @@ export default function DayScreen() {
     scrollOffsetRef.current = y;
   }, []);
 
-  const dayIndices = useMemo(
-    () => Array.from({ length: DAYS_EACH_WAY * 2 + 1 }, (_, i) => i),
-    [],
-  );
+  const dayIndices = useMemo(() => Array.from({ length: DAYS_EACH_WAY * 2 + 1 }, (_, i) => i), []);
   const anchorWeek = useMemo(() => startOfWeek(anchor, WEEK_STARTS_ON), [anchor]);
   const weekIndices = useMemo(
     () => Array.from({ length: Math.ceil((DAYS_EACH_WAY * 2) / 7) + 3 }, (_, i) => i),
@@ -91,6 +92,7 @@ export default function DayScreen() {
       const index = indexForDay(day);
       if (index < 0 || index >= dayIndices.length) return;
       setSelected(startOfDay(day));
+      setSelection(null);
       if (syncDays) dayPager.current?.scrollToIndex({ index, animated: false });
       if (syncWeeks) weekPager.current?.scrollToIndex({ index: indexForWeek(day), animated: true });
     },
@@ -182,18 +184,27 @@ export default function DayScreen() {
         initialNumToRender={1}
         maxToRenderPerBatch={1}
         onMomentumScrollEnd={onDayPageEnd}
+        scrollEnabled={!dragging}
+        extraData={selection}
         style={styles.pager}
-        renderItem={({ item }) => (
-          <DayPage
-            date={dayForIndex(item)}
-            width={width}
-            initialScrollY={scrollOffsetRef.current}
-            onScrollY={onScrollY}
-            onPressEvent={openEvent}
-            onToggleReminder={toggleReminder}
-            onCreateAt={createEvent}
-          />
-        )}
+        renderItem={({ item }) => {
+          const date = dayForIndex(item);
+          const day = dayKey(date);
+          return (
+            <DayPage
+              date={date}
+              width={width}
+              initialScrollY={scrollOffsetRef.current}
+              onScrollY={onScrollY}
+              onPressEvent={openEvent}
+              onToggleReminder={toggleReminder}
+              onCreateAt={createEvent}
+              selectedKey={selection?.day === day ? selection.key : null}
+              onSelect={(key) => setSelection(key ? { key, day } : null)}
+              onDraggingChange={setDragging}
+            />
+          );
+        }}
       />
     </View>
   );
@@ -231,7 +242,9 @@ function WeekRow({
             accessibilityLabel={formatFullDate(day)}
           >
             <View style={[styles.weekDayCircle, { backgroundColor: background }]}>
-              <Text style={[styles.weekDayNumber, { color }, (isSelected || isToday) && styles.bold]}>
+              <Text
+                style={[styles.weekDayNumber, { color }, (isSelected || isToday) && styles.bold]}
+              >
                 {day.getDate()}
               </Text>
             </View>
