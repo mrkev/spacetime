@@ -21,7 +21,6 @@ import {
   formatFullDate,
   formatMonth,
   isSameDay,
-  minutesIntoDay,
   parseDayKey,
   startOfDay,
   startOfWeek,
@@ -31,7 +30,13 @@ import { useNowAction } from '../../../lib/nowAction';
 import { useTheme, type Theme } from '../../../lib/theme';
 import { AccessBanner } from '../../../time/AccessBanner';
 import { useCalendar } from '../../../time/CalendarProvider';
-import { DayPage, HOUR_HEIGHT, MAX_HOUR_HEIGHT, MIN_HOUR_HEIGHT } from '../../../time/DayPage';
+import {
+  DayPage,
+  HOUR_HEIGHT,
+  MAX_HOUR_HEIGHT,
+  MIN_HOUR_HEIGHT,
+  nowOffset,
+} from '../../../time/DayPage';
 import { useTimeActions } from '../../../time/actions';
 
 const DAYS_EACH_WAY = 730;
@@ -79,10 +84,7 @@ export default function DayScreen() {
 
   // Start the timeline around the current hour (or 7 AM on other days), shared across pages.
   const scrollOffsetRef = useRef(
-    Math.max(
-      0,
-      ((isSameDay(anchor, new Date()) ? minutesIntoDay(new Date()) / 60 : 8) - 1) * hourHeight,
-    ),
+    Math.max(0, isSameDay(anchor, new Date()) ? nowOffset(hourHeight) : (8 - 1) * hourHeight),
   );
 
   const onScrollY = useCallback((y: number) => {
@@ -124,7 +126,14 @@ export default function DayScreen() {
     [indexForDay, indexForWeek, dayIndices.length],
   );
 
-  useNowAction('time', () => select(new Date()));
+  // Today: go to today's page and bring the current-time indicator into view. Pages that mount on
+  // the way start there; today's page, if already showing, scrolls to it (`scrollToNow`).
+  const [scrollToNow, setScrollToNow] = useState(0);
+  useNowAction('time', () => {
+    scrollOffsetRef.current = nowOffset(hourHeightRef.current);
+    select(new Date());
+    setScrollToNow((n) => n + 1);
+  });
 
   const onDayPageEnd = (e: NativeSyntheticEvent<NativeScrollEvent>) => {
     const index = Math.round(e.nativeEvent.contentOffset.x / width);
@@ -148,7 +157,9 @@ export default function DayScreen() {
     <View style={[styles.container, { backgroundColor: theme.background }]}>
       <Stack.Screen
         options={{
-          title: formatMonth(selected),
+          // Like Calendar, the back button to the month view names the month you're in.
+          title: '',
+          headerBackTitle: formatMonth(selected),
           headerRight: () => (
             <View style={styles.headerRight}>
               <HeaderButton
@@ -229,6 +240,7 @@ export default function DayScreen() {
               selectedKey={selection?.day === day ? selection.key : null}
               onSelect={(key) => setSelection(key ? { key, day } : null)}
               onGestureActive={setGestureActive}
+              scrollToNow={scrollToNow}
               hourHeight={hourHeight}
               onZoom={zoomTo}
               onZoomEnd={saveZoom}

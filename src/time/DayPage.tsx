@@ -1,5 +1,14 @@
 import * as Haptics from 'expo-haptics';
-import { memo, useEffect, useLayoutEffect, useMemo, useRef, useState } from 'react';
+import {
+  createContext,
+  memo,
+  useContext,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+} from 'react';
 import {
   Pressable,
   ScrollView,
@@ -14,6 +23,7 @@ import {
   usePanGesture,
   usePinchGesture,
   type PanGestureConfig,
+  type PinchGesture,
   type PinchGestureConfig,
 } from 'react-native-gesture-handler';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -76,7 +86,14 @@ type Props = {
   hourHeight: number;
   onZoom: (hourHeight: number) => void;
   onZoomEnd: () => void;
+  /** Bumped to scroll today's page to the current time (the Today button). */
+  scrollToNow: number;
 };
+
+/** Where the timeline scrolls to show the current time: an hour above it. */
+export function nowOffset(hourHeight: number) {
+  return Math.max(0, (minutesIntoDay(new Date()) / 60 - 1) * hourHeight);
+}
 
 /**
  * Where a dragged event is drawn until the calendar reloads with its saved times. `basis` is the
@@ -92,6 +109,12 @@ type Draft = {
   fromSelected: boolean;
   basis: DayItems | undefined;
 };
+
+/**
+ * The day's pinch-to-zoom gesture. Event drags run alongside it, so a pinch that starts on an
+ * event still zooms instead of waiting on the event's long press.
+ */
+const PinchContext = createContext<PinchGesture | undefined>(undefined);
 
 type TimelineEntry =
   | (TimedItem & { kind: 'event'; event: CalendarEvent })
@@ -112,6 +135,7 @@ export const DayPage = memo(function DayPage({
   hourHeight,
   onZoom,
   onZoomEnd,
+  scrollToNow,
 }: Props) {
   const theme = useTheme();
   const { rescheduleEvent, deleteEvent, duplicateEvent, cutEvent, copyEvent, pasteEvent } =
@@ -210,6 +234,14 @@ export const DayPage = memo(function DayPage({
   );
 
   // Other days (and this one, outside a pinch) keep the same time at the top when the zoom changes.
+  // Only presses of Today after this page mounted; a page mounting on the way is already there.
+  const handledScrollToNow = useRef(scrollToNow);
+  useEffect(() => {
+    if (scrollToNow === handledScrollToNow.current) return;
+    handledScrollToNow.current = scrollToNow;
+    if (isToday(date)) scrollRef.current?.scrollTo({ y: nowOffset(hourHeight), animated: true });
+  }, [scrollToNow, date, hourHeight]);
+
   const lastHourHeight = useRef(hourHeight);
   useLayoutEffect(() => {
     const previous = lastHourHeight.current;
@@ -397,87 +429,89 @@ export const DayPage = memo(function DayPage({
 
       {/* The pinch is detected on this wrapper so its focal point is relative to what's visible. */}
       <GestureDetector gesture={pinch}>
-        <View collapsable={false} style={styles.viewport}>
-          <ScrollView
-            ref={scrollRef}
-            contentOffset={initialOffset}
-            onScroll={(e) => {
-              scrollY.current = e.nativeEvent.contentOffset.y;
-              onScrollY(e.nativeEvent.contentOffset.y);
-            }}
-            scrollEventThrottle={32}
-            scrollEnabled={!dragging && !pinching}
-            showsVerticalScrollIndicator={false}
-            contentContainerStyle={{ paddingBottom: bottom }}
-          >
-            <View style={{ height: 24 * hourHeight + TIMELINE_PADDING * 2 }}>
-              {/* Long-press empty space to create an event. It's a layer behind the timeline rather
+        <PinchContext.Provider value={pinch}>
+          <View collapsable={false} style={styles.viewport}>
+            <ScrollView
+              ref={scrollRef}
+              contentOffset={initialOffset}
+              onScroll={(e) => {
+                scrollY.current = e.nativeEvent.contentOffset.y;
+                onScrollY(e.nativeEvent.contentOffset.y);
+              }}
+              scrollEventThrottle={32}
+              scrollEnabled={!dragging && !pinching}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingBottom: bottom }}
+            >
+              <View style={{ height: 24 * hourHeight + TIMELINE_PADDING * 2 }}>
+                {/* Long-press empty space to create an event. It's a layer behind the timeline rather
               than a wrapper, so it doesn't fold the events into one accessibility element, and
               locationY is always relative to the timeline itself. */}
-              <Pressable
-                accessible={false}
-                style={StyleSheet.absoluteFill}
-                onPress={onPressEmpty}
-                onLongPress={onLongPress}
-                delayLongPress={LONG_PRESS_MS}
-              />
-              <HourGrid theme={theme} hourHeight={hourHeight} />
-              <View
-                pointerEvents="box-none"
-                style={[styles.events, { left: GUTTER, width: columnWidth }]}
-              >
-                {timed.map((entry) =>
-                  entry.kind === 'event' ? (
-                    <EventBlock
-                      key={entry.key}
-                      entry={entry}
-                      range={rangeOf(entry)}
-                      selected={isSelected(entry.key)}
-                      lifted={activeDraft?.key === entry.key && dragging}
-                      holdToDrag={
-                        activeDraft?.key === entry.key && dragging
-                          ? !activeDraft.fromSelected
-                          : !isSelected(entry.key)
-                      }
-                      draggable={canDrag(entry.event, startOfDay(date))}
-                      width={columnWidth}
-                      hourHeight={hourHeight}
-                      theme={theme}
-                      onPress={() => {
-                        if (dragging || Date.now() - lastDragEnd.current < 500) return;
-                        onSelect(null);
-                        onPressEvent(entry.event);
-                      }}
-                      onDragStart={startDrag}
-                      onDrag={updateDrag}
-                      onDragEnd={endDrag}
-                    />
-                  ) : (
-                    <ReminderBlock
-                      key={entry.key}
-                      entry={entry}
-                      width={columnWidth}
-                      hourHeight={hourHeight}
-                      theme={theme}
-                      onToggle={onToggleReminder}
-                      onPress={onPressReminder}
-                    />
-                  ),
-                )}
-              </View>
-              {today ? <NowIndicator theme={theme} hourHeight={hourHeight} /> : null}
-              {activeDraft && dragging ? (
-                <DragTimes
-                  range={activeDraft.range}
-                  date={date}
-                  theme={theme}
-                  hourHeight={hourHeight}
+                <Pressable
+                  accessible={false}
+                  style={StyleSheet.absoluteFill}
+                  onPress={onPressEmpty}
+                  onLongPress={onLongPress}
+                  delayLongPress={LONG_PRESS_MS}
                 />
-              ) : null}
-              {menu ? <EditMenu top={menu.top} items={menu.items} /> : null}
-            </View>
-          </ScrollView>
-        </View>
+                <HourGrid theme={theme} hourHeight={hourHeight} />
+                <View
+                  pointerEvents="box-none"
+                  style={[styles.events, { left: GUTTER, width: columnWidth }]}
+                >
+                  {timed.map((entry) =>
+                    entry.kind === 'event' ? (
+                      <EventBlock
+                        key={entry.key}
+                        entry={entry}
+                        range={rangeOf(entry)}
+                        selected={isSelected(entry.key)}
+                        lifted={activeDraft?.key === entry.key && dragging}
+                        holdToDrag={
+                          activeDraft?.key === entry.key && dragging
+                            ? !activeDraft.fromSelected
+                            : !isSelected(entry.key)
+                        }
+                        draggable={canDrag(entry.event, startOfDay(date))}
+                        width={columnWidth}
+                        hourHeight={hourHeight}
+                        theme={theme}
+                        onPress={() => {
+                          if (dragging || Date.now() - lastDragEnd.current < 500) return;
+                          onSelect(null);
+                          onPressEvent(entry.event);
+                        }}
+                        onDragStart={startDrag}
+                        onDrag={updateDrag}
+                        onDragEnd={endDrag}
+                      />
+                    ) : (
+                      <ReminderBlock
+                        key={entry.key}
+                        entry={entry}
+                        width={columnWidth}
+                        hourHeight={hourHeight}
+                        theme={theme}
+                        onToggle={onToggleReminder}
+                        onPress={onPressReminder}
+                      />
+                    ),
+                  )}
+                </View>
+                {today ? <NowIndicator theme={theme} hourHeight={hourHeight} /> : null}
+                {activeDraft && dragging ? (
+                  <DragTimes
+                    range={activeDraft.range}
+                    date={date}
+                    theme={theme}
+                    hourHeight={hourHeight}
+                  />
+                ) : null}
+                {menu ? <EditMenu top={menu.top} items={menu.items} /> : null}
+              </View>
+            </ScrollView>
+          </View>
+        </PinchContext.Provider>
       </GestureDetector>
     </View>
   );
@@ -583,6 +617,7 @@ function useDragGesture(
     latest.current = { entry, handlers, hourHeight };
   });
   const minutes = (translationY: number) => (translationY / latest.current.hourHeight) * 60;
+  const pinch = useContext(PinchContext);
   const config = useMemo<PanGestureConfig>(
     () => ({
       enabled,
@@ -590,6 +625,7 @@ function useDragGesture(
       // Unselected events lift after a hold, like Calendar; selected ones move right away.
       activateAfterLongPress: longPress ? LONG_PRESS_MS : undefined,
       minDistance: longPress ? undefined : 2,
+      simultaneousWith: pinch,
       onActivate: () => latest.current.handlers.onDragStart(latest.current.entry),
       onUpdate: (e) =>
         latest.current.handlers.onDrag(latest.current.entry, mode, minutes(e.translationY)),
@@ -600,7 +636,7 @@ function useDragGesture(
         handlers.onDragEnd(entry, e.canceled);
       },
     }),
-    [enabled, longPress, mode],
+    [enabled, longPress, mode, pinch],
   );
   return usePanGesture(config);
 }
@@ -835,7 +871,12 @@ function NowIndicator({ theme, hourHeight }: { theme: Theme; hourHeight: number 
   }, []);
   const top = TIMELINE_PADDING + (minutesIntoDay(now) / 60) * hourHeight;
   return (
-    <View pointerEvents="none" style={[styles.nowRow, { top: top - 8 }]}>
+    <View
+      pointerEvents="none"
+      accessible
+      accessibilityLabel={`Current time, ${formatTime(now)}`}
+      style={[styles.nowRow, { top: top - 8 }]}
+    >
       <Text style={[styles.nowLabel, { color: theme.tint, backgroundColor: theme.background }]}>
         {formatTime(now)}
       </Text>

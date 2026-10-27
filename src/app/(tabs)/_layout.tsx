@@ -3,6 +3,7 @@ import { NativeTabs } from 'expo-router/native-tabs';
 
 import { runNowAction, type TabName } from '../../lib/nowAction';
 import { useTheme } from '../../lib/theme';
+import { openTimeTab } from '../../time/timeLevel';
 
 export default function TabLayout() {
   const theme = useTheme();
@@ -15,7 +16,7 @@ export default function TabLayout() {
         <NativeTabs.Trigger.Label>Space</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf={{ default: 'map', selected: 'map.fill' }} md="map" />
       </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="time">
+      <NativeTabs.Trigger name="time" listeners={{ tabPress: openTimeTab }}>
         <NativeTabs.Trigger.Label>Time</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf="calendar" md="calendar_month" />
       </NativeTabs.Trigger>

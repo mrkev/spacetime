@@ -6,7 +6,9 @@ import {
   differenceInMonths,
   isSameDay,
   minutesIntoDay,
+  monthKey,
   parseDayKey,
+  parseMonthKey,
   startOfWeek,
   toDate,
   weekdayLabels,
@@ -19,6 +21,13 @@ describe('dates', () => {
     expect(parseDayKey('2026-10-26')).toEqual(date);
     expect(parseDayKey('not a date')).toBeNull();
     expect(parseDayKey(undefined)).toBeNull();
+  });
+
+  it('round-trips month keys to the first of the month', () => {
+    expect(monthKey(new Date(2027, 2, 15))).toBe('2027-03');
+    expect(parseMonthKey('2027-03')).toEqual(new Date(2027, 2, 1));
+    expect(parseMonthKey('2027-03-15')).toBeNull();
+    expect(parseMonthKey(undefined)).toBeNull();
   });
 
   it('adds days across month and year boundaries', () => {

@@ -85,6 +85,12 @@ export function monthKey(date: Date): string {
   return `${date.getFullYear()}-${pad(date.getMonth() + 1)}`;
 }
 
+export function parseMonthKey(key: string | undefined | null): Date | null {
+  const match = key ? /^(\d{4})-(\d{2})$/.exec(key) : null;
+  if (!match) return null;
+  return new Date(Number(match[1]), Number(match[2]) - 1, 1);
+}
+
 export function minutesIntoDay(date: Date): number {
   return date.getHours() * 60 + date.getMinutes();
 }
