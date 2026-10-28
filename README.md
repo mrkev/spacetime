@@ -10,17 +10,19 @@ A React Native (Expo SDK 58) app with two tabs:
 The app uses native modules that Expo Go doesn't include (calendar, background geofencing), so it runs as a development build:
 
 ```sh
-npm install
-npm run ios        # builds and launches in the iOS Simulator (needs Xcode)
-npm run android    # needs Android Studio
-npm start          # start Metro for an already-installed dev build
+pnpm install
+pnpm ios           # builds and launches in the iOS Simulator (needs Xcode)
+pnpm android       # needs Android Studio
+pnpm start         # start Metro for an already-installed dev build
 ```
 
-Other scripts: `npm run typecheck`, `npm run lint`, `npm test`.
+Other scripts: `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm format`.
 
 Background geofencing and calendar access work best on a real device. In the Simulator you can test location reminders with **Features → Location → Custom Location…**.
 
 ## How it's organized
+
+The repo is a pnpm workspace. The app lives in `packages/app`; other packages can go alongside it in `packages/`. Inside `packages/app`:
 
 ```
 index.ts                     Entry: defines the geofence task before the app renders

@@ -1,6 +1,5 @@
-import { SymbolView, type AndroidSymbol, type SymbolViewProps } from 'expo-symbols';
+import { SymbolView, type AndroidSymbol, type SFSymbol, type SymbolViewProps } from 'expo-symbols';
 import type { ColorValue } from 'react-native';
-import type { SFSymbol } from 'sf-symbols-typescript';
 
 export type IconName = { ios: SFSymbol; android: AndroidSymbol };
 
