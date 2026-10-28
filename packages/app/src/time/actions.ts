@@ -2,7 +2,6 @@ import { router } from 'expo-router';
 import { useCallback } from 'react';
 import { ActionSheetIOS, Alert, Linking, Platform } from 'react-native';
 
-import { REMINDERS_COLLECTION_ID } from '../space/store';
 import { useCalendar, type CalendarEvent, type CalendarReminder } from './CalendarProvider';
 import { copyEvent, getCopiedEvent, snapshotEvent, type CopiedEvent } from './editing';
 
@@ -141,11 +140,7 @@ export function useTimeActions() {
     router.push({ pathname: '/reminder/[id]', params: { id: reminder.key } });
   }, []);
 
-  const createLocationReminder = useCallback(() => {
-    router.push({ pathname: '/place/new', params: { collectionId: REMINDERS_COLLECTION_ID } });
-  }, []);
-
-  /** The "+" menu: event, reminder, or location reminder. */
+  /** The "+" menu: event or reminder. */
   const showAddMenu = useCallback(
     (day?: Date) => {
       const options: Option[] = [
@@ -154,10 +149,9 @@ export function useTimeActions() {
       if (Platform.OS === 'ios') {
         options.push({ label: 'New Reminder', run: () => createReminder(day) });
       }
-      options.push({ label: 'New Location Reminder', run: createLocationReminder });
       showOptions(Platform.OS === 'ios' ? undefined : 'Add', options);
     },
-    [createEvent, createReminder, createLocationReminder],
+    [createEvent, createReminder],
   );
 
   /** Saves new times for a dragged event. Resolves false if it wasn't saved. */
@@ -254,7 +248,6 @@ export function useTimeActions() {
     openEvent,
     createReminder,
     openReminder,
-    createLocationReminder,
     showAddMenu,
     rescheduleEvent,
     deleteEvent,
