@@ -1,6 +1,5 @@
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
-import Storage from 'expo-sqlite/kv-store';
 import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
@@ -16,31 +15,23 @@ import MapView, { Circle, Marker, type LongPressEvent, type Region } from 'react
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, icons } from '../../../components/Icon';
-import { describeCoordinate, searchAddress, type Coordinate } from '../../../lib/geo';
+import {
+  searchPlaces,
+  searchSuggestion,
+  suggestPlaces,
+  type Coordinate,
+  type PlaceResult,
+  type SearchRegion,
+  type SearchSuggestion,
+} from '../../../lib/geo';
 import { useNowAction } from '../../../lib/nowAction';
 import { useTheme, withAlpha, type Theme } from '../../../lib/theme';
 import { useLocationReminders } from '../../../space/locationReminders';
+import { loadMapRegion, saveMapRegion } from '../../../space/mapRegion';
 import { REMINDERS_COLLECTION_ID, useSpaceState, type Collection } from '../../../space/store';
 
 const ALL = 'all';
-const REGION_KEY = 'spacetime.space.region.v1';
 const USER_DELTA = 0.03;
-
-/** Where the map was last left, so it opens near the user even before we have a location fix. */
-function loadRegion(): Region | undefined {
-  try {
-    const saved = Storage.getItemSync(REGION_KEY);
-    return saved ? (JSON.parse(saved) as Region) : undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-function saveRegion(region: Region) {
-  Storage.setItemSync(REGION_KEY, JSON.stringify(region));
-}
-
-type SearchResult = Coordinate & { name: string; address: string };
 
 export default function SpaceScreen() {
   const theme = useTheme();
@@ -51,10 +42,17 @@ export default function SpaceScreen() {
 
   const [filter, setFilter] = useState<string>(ALL);
   const [query, setQuery] = useState('');
+  const [editing, setEditing] = useState(false);
+  const [suggestions, setSuggestions] = useState<SearchSuggestion[]>([]);
   const [searching, setSearching] = useState(false);
-  const [result, setResult] = useState<SearchResult | null>(null);
+  const [results, setResults] = useState<PlaceResult[]>([]);
+  const [selected, setSelected] = useState(0);
+  const [notFound, setNotFound] = useState(false);
   const [locationGranted, setLocationGranted] = useState(false);
-  const [initialRegion] = useState(loadRegion);
+  const [initialRegion] = useState(loadMapRegion);
+  // Searches prefer places in view.
+  const visibleRegion = useRef<SearchRegion | undefined>(initialRegion);
+  const latestQuery = useRef('');
   const [mapReady, setMapReady] = useState(false);
   const [userRegion, setUserRegion] = useState<Region | null>(null);
   const centeredOnUser = useRef(false);
@@ -121,22 +119,43 @@ export default function SpaceScreen() {
   // The tab bar's floating "Here" button.
   useNowAction('space', goToMyLocation);
 
-  const runSearch = async () => {
+  const result = results[selected] ?? null;
+
+  const changeQuery = (text: string) => {
+    setQuery(text);
+    setNotFound(false);
+    latestQuery.current = text;
+    suggestPlaces(text, visibleRegion.current).then((next) => {
+      // Typing outpaces MapKit, so only keep suggestions for what's in the field now.
+      if (latestQuery.current === text) setSuggestions(next);
+    });
+  };
+
+  const showResults = async (search: Promise<PlaceResult[]>) => {
     Keyboard.dismiss();
     setSearching(true);
-    const coord = await searchAddress(query);
-    if (coord) {
-      const described = await describeCoordinate(coord);
-      setResult({
-        ...coord,
-        name: described?.name ?? query.trim(),
-        address: described?.address ?? '',
-      });
-      focusOn([coord]);
-    } else {
-      setResult(null);
-    }
+    const found = await search;
     setSearching(false);
+    setResults(found);
+    setSelected(0);
+    setNotFound(found.length === 0);
+    focusOn(found.map(toCoordinate));
+  };
+
+  const runSearch = () => showResults(searchPlaces(query, visibleRegion.current));
+
+  const pickSuggestion = (suggestion: SearchSuggestion) => {
+    setQuery(suggestion.title);
+    latestQuery.current = suggestion.title;
+    showResults(searchSuggestion(suggestion));
+  };
+
+  const clearSearch = () => {
+    latestQuery.current = '';
+    setQuery('');
+    setSuggestions([]);
+    setResults([]);
+    setNotFound(false);
   };
 
   const addPlaceAt = (coord: Coordinate, prefill?: { name: string; address: string }) => {
@@ -162,7 +181,11 @@ export default function SpaceScreen() {
         style={StyleSheet.absoluteFill}
         initialRegion={initialRegion}
         onMapReady={() => setMapReady(true)}
-        onRegionChangeComplete={saveRegion}
+        onRegionChangeComplete={(region) => {
+          visibleRegion.current = region;
+          saveMapRegion(region);
+        }}
+        onPress={Keyboard.dismiss}
         showsUserLocation={locationGranted}
         showsMyLocationButton={false}
         showsCompass={false}
@@ -208,17 +231,17 @@ export default function SpaceScreen() {
             strokeWidth={1.5}
           />
         ))}
-        {result ? (
+        {results.map((found, i) => (
           <Marker
-            coordinate={toCoordinate(result)}
+            key={`result:${i}:${found.latitude},${found.longitude}`}
+            coordinate={toCoordinate(found)}
             pinColor={theme.blue}
-            title={result.name}
+            title={found.name}
             description="Tap to save"
-            onCalloutPress={() =>
-              addPlaceAt(result, { name: result.name, address: result.address })
-            }
+            onPress={() => setSelected(i)}
+            onCalloutPress={() => addPlaceAt(found, { name: found.name, address: found.address })}
           />
-        ) : null}
+        ))}
       </MapView>
 
       <View style={[styles.top, { paddingTop: insets.top + 8 }]} pointerEvents="box-none">
@@ -226,61 +249,93 @@ export default function SpaceScreen() {
           <Icon name={icons.search} color={theme.secondaryText} size={17} />
           <TextInput
             style={[styles.searchInput, { color: theme.text }]}
-            placeholder="Search for an address"
+            placeholder="Search for a place or address"
             placeholderTextColor={theme.secondaryText}
             value={query}
-            onChangeText={setQuery}
+            onChangeText={changeQuery}
+            onFocus={() => {
+              setEditing(true);
+              changeQuery(query);
+            }}
+            onBlur={() => setEditing(false)}
             onSubmitEditing={runSearch}
             returnKeyType="search"
             autoCorrect={false}
           />
           {searching ? <ActivityIndicator size="small" /> : null}
           {query && !searching ? (
-            <Pressable
-              hitSlop={8}
-              onPress={() => {
-                setQuery('');
-                setResult(null);
-              }}
-            >
+            <Pressable hitSlop={8} onPress={clearSearch}>
               <Icon name={icons.close} color={theme.tertiaryText} size={17} />
             </Pressable>
           ) : null}
         </View>
 
-        <ScrollView
-          horizontal
-          showsHorizontalScrollIndicator={false}
-          contentContainerStyle={styles.chips}
-          keyboardShouldPersistTaps="handled"
-        >
-          <Chip
-            label="All"
-            count={total}
-            selected={filter === ALL}
-            onPress={() => selectFilter(ALL)}
-            theme={theme}
-          />
-          {collections.map((collection) => (
+        {editing && suggestions.length > 0 ? (
+          <View style={[styles.suggestions, cardStyle(theme)]}>
+            <ScrollView style={styles.suggestionList} keyboardShouldPersistTaps="handled">
+              {suggestions.map((suggestion, i) => (
+                <Pressable
+                  key={suggestion.id}
+                  onPress={() => pickSuggestion(suggestion)}
+                  style={({ pressed }) => [
+                    styles.suggestion,
+                    i > 0 && {
+                      borderTopColor: theme.separator,
+                      borderTopWidth: StyleSheet.hairlineWidth,
+                    },
+                    pressed && { backgroundColor: theme.fill },
+                  ]}
+                >
+                  <Text style={[styles.suggestionTitle, { color: theme.text }]} numberOfLines={1}>
+                    {suggestion.title}
+                  </Text>
+                  {suggestion.subtitle ? (
+                    <Text
+                      style={[styles.suggestionSubtitle, { color: theme.secondaryText }]}
+                      numberOfLines={1}
+                    >
+                      {suggestion.subtitle}
+                    </Text>
+                  ) : null}
+                </Pressable>
+              ))}
+            </ScrollView>
+          </View>
+        ) : (
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.chips}
+            keyboardShouldPersistTaps="handled"
+          >
             <Chip
-              key={collection.id}
-              label={collection.name}
-              collection={collection}
-              count={counts.get(collection.id) ?? 0}
-              selected={filter === collection.id}
-              onPress={() => selectFilter(collection.id)}
+              label="All"
+              count={total}
+              selected={filter === ALL}
+              onPress={() => selectFilter(ALL)}
               theme={theme}
             />
-          ))}
-          <Pressable
-            onPress={() => router.push('/collections')}
-            style={[styles.chip, cardStyle(theme)]}
-            accessibilityLabel="Manage collections"
-          >
-            <Icon name={icons.folder} color={theme.blue} size={15} />
-            <Text style={[styles.chipLabel, { color: theme.blue }]}>Edit</Text>
-          </Pressable>
-        </ScrollView>
+            {collections.map((collection) => (
+              <Chip
+                key={collection.id}
+                label={collection.name}
+                collection={collection}
+                count={counts.get(collection.id) ?? 0}
+                selected={filter === collection.id}
+                onPress={() => selectFilter(collection.id)}
+                theme={theme}
+              />
+            ))}
+            <Pressable
+              onPress={() => router.push('/collections')}
+              style={[styles.chip, cardStyle(theme)]}
+              accessibilityLabel="Manage collections"
+            >
+              <Icon name={icons.folder} color={theme.blue} size={15} />
+              <Text style={[styles.chipLabel, { color: theme.blue }]}>Edit</Text>
+            </Pressable>
+          </ScrollView>
+        )}
       </View>
 
       {result ? (
@@ -311,9 +366,11 @@ export default function SpaceScreen() {
           pointerEvents="none"
         >
           <Text style={[styles.hintText, { color: theme.secondaryText }]}>
-            {total === 0
-              ? 'Long-press the map to save a place'
-              : `${visiblePlaces.length + visibleReminders.length} places`}
+            {notFound
+              ? `No results for “${query.trim()}”`
+              : total === 0
+                ? 'Long-press the map to save a place'
+                : `${visiblePlaces.length + visibleReminders.length} places`}
           </Text>
         </View>
       )}
@@ -412,6 +469,11 @@ const styles = StyleSheet.create({
   chipDot: { width: 10, height: 10, borderRadius: 5 },
   chipLabel: { fontSize: 15, fontWeight: '600' },
   chipCount: { fontSize: 13, fontWeight: '500' },
+  suggestions: { marginHorizontal: 12, maxHeight: 320, borderRadius: 16 },
+  suggestionList: { borderRadius: 16 },
+  suggestion: { paddingHorizontal: 16, paddingVertical: 10 },
+  suggestionTitle: { fontSize: 16, fontWeight: '500' },
+  suggestionSubtitle: { fontSize: 13, marginTop: 2 },
   resultCard: {
     position: 'absolute',
     left: 12,

@@ -4,7 +4,7 @@ import MapView, { Circle, Marker } from 'react-native-maps';
 
 import { Field, Section, Segmented, Separator } from '../components/Form';
 import { Icon, icons } from '../components/Icon';
-import { describeCoordinate, searchAddress, type Coordinate } from '../lib/geo';
+import { describeCoordinate, searchPlaces, type Coordinate } from '../lib/geo';
 import { useTheme, withAlpha } from '../lib/theme';
 import { useCalendar } from '../time/CalendarProvider';
 import {
@@ -23,6 +23,7 @@ import {
   type Place,
   type PlaceInput,
 } from './store';
+import { loadMapRegion } from './mapRegion';
 
 export const RADIUS_OPTIONS = [
   { label: '100 m', value: 100 },
@@ -35,6 +36,8 @@ export const RADIUS_OPTIONS = [
 export type ReminderFields = { title: string; trigger: ReminderTrigger; radius: number };
 
 const DEFAULT_REMINDER: ReminderFields = { title: '', trigger: 'arrive', radius: 250 };
+/** How far around the current pin (in degrees, about 5 km) search looks first. */
+const SEARCH_DELTA = 0.05;
 
 export type PlaceFormState = {
   coordinate: Coordinate | null;
@@ -201,14 +204,17 @@ export function PlaceFormFields({
 
   const runSearch = async () => {
     setSearching(true);
-    const coordinate = await searchAddress(query);
+    const near = state.coordinate
+      ? { ...state.coordinate, latitudeDelta: SEARCH_DELTA, longitudeDelta: SEARCH_DELTA }
+      : loadMapRegion();
+    const [place] = await searchPlaces(query, near);
     setSearching(false);
-    if (!coordinate) {
-      Alert.alert('Not Found', 'Try a more specific address.');
+    if (!place) {
+      Alert.alert('Not Found', 'Try a different search.');
       return;
     }
-    update({ coordinate });
-    resolveAddress(coordinate, true);
+    const { name, address, ...coordinate } = place;
+    update({ coordinate, name, address });
   };
 
   return (
@@ -217,7 +223,7 @@ export function PlaceFormFields({
         footer={
           state.coordinate
             ? state.address || 'Drag the pin to adjust the location.'
-            : 'Search for an address, or long-press the map in Space.'
+            : 'Search for a place or address, or long-press the map in Space.'
         }
       >
         {!state.coordinate || query ? (
@@ -225,7 +231,7 @@ export function PlaceFormFields({
             <Icon name={icons.search} color={theme.secondaryText} size={16} />
             <Field
               style={styles.searchField}
-              placeholder="Search for an address"
+              placeholder="Search for a place or address"
               value={query}
               onChangeText={setQuery}
               onSubmitEditing={runSearch}
