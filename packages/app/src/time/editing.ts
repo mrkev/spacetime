@@ -65,6 +65,7 @@ export type CopiedEvent = {
   durationMinutes: number;
   calendarId: string;
   location: string | null;
+  place: CalendarEvent['place'];
   notes: string;
   url?: string;
   alarms: CalendarEvent['source']['alarms'];
@@ -79,6 +80,7 @@ export function snapshotEvent(event: CalendarEvent): CopiedEvent {
     durationMinutes: Math.round((event.end.getTime() - event.start.getTime()) / 60_000),
     calendarId: event.source.calendarId,
     location: event.location,
+    place: event.place,
     notes: event.source.notes,
     url: event.source.url,
     alarms: event.source.alarms,

@@ -176,8 +176,15 @@ export const DayPage = memo(function DayPage({
   scrollToNow,
 }: Props) {
   const theme = useTheme();
-  const { rescheduleEvent, deleteEvent, duplicateEvent, cutEvent, copyEvent, pasteEvent } =
-    useTimeActions();
+  const {
+    rescheduleEvent,
+    deleteEvent,
+    duplicateEvent,
+    setEventPlace,
+    cutEvent,
+    copyEvent,
+    pasteEvent,
+  } = useTimeActions();
   // The tab bar floats over content, so leave room to scroll the last hours above it.
   const { bottom } = useSafeAreaInsets();
   const { getDay, ensureMonths } = useCalendar();
@@ -382,6 +389,7 @@ export const DayPage = memo(function DayPage({
           { label: 'Copy', onPress: done(copyEvent) },
           { label: 'Delete', destructive: true, onPress: done(deleteEvent) },
           { label: 'Duplicate', onPress: done(duplicateEvent) },
+          { label: 'Place…', onPress: done(setEventPlace) },
         ]
       : [
           { label: 'Copy', onPress: done(copyEvent) },

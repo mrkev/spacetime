@@ -27,10 +27,13 @@ import { Alert, Pressable, StyleSheet, Text as RNText, View } from 'react-native
 import { Icon, icons } from '../components/Icon';
 import { openDirections } from '../lib/geo';
 import { useTheme } from '../lib/theme';
-import { useCalendar } from '../time/CalendarProvider';
+import { useTimeActions } from '../time/actions';
+import { UPCOMING_DAYS, useCalendar } from '../time/CalendarProvider';
 import { describeTrigger, type LocationReminder } from './locationReminders';
 import {
   addToCollection,
+  describeEventTime,
+  eventLocation,
   findMapPlace,
   placeCollections,
   setCollections,
@@ -43,12 +46,13 @@ const secondary = foregroundStyle({ type: 'hierarchical', style: 'secondary' });
 
 /**
  * A place's details, in a sheet over the map: its collections (sorted, since the first colors its
- * pin) and its todos.
+ * pin), its todos, and its upcoming events.
  */
 export function PlaceSheet({ id }: { id: string }) {
   const theme = useTheme();
   const { collections } = useSpaceState();
   const { toggleReminder, refresh } = useCalendar();
+  const { openEvent, createEvent } = useTimeActions();
   const mapPlaces = useMapPlaces();
 
   // A place's ID changes when it's saved or unsaved, so keep track of where it was. And when its
@@ -59,7 +63,8 @@ export function PlaceSheet({ id }: { id: string }) {
   // Todos checked off here, which drop out of the open reminders.
   const [done, setDone] = useState<LocationReminder[]>([]);
 
-  const place = live ?? (last && { ...last, saved: null, collectionIds: [], todos: [] });
+  const place =
+    live ?? (last && { ...last, saved: null, collectionIds: [], todos: [], events: [] });
   if (!place) return <MissingPlace message="This place was deleted." />;
 
   const inCollections = placeCollections(place, collections);
@@ -71,7 +76,7 @@ export function PlaceSheet({ id }: { id: string }) {
     inCollections.length > 1
       ? 'The first collection colors the pin. Hold and drag to reorder.'
       : inCollections.length === 0
-        ? 'Not saved. Without a collection, this place is on the map only until its todos are done.'
+        ? 'Not saved. Without a collection, this place is on the map only while it has todos or upcoming events.'
         : null;
   const isDone = (todo: LocationReminder) => !place.todos.some((t) => t.id === todo.id);
 
@@ -257,6 +262,35 @@ export function PlaceSheet({ id }: { id: string }) {
               onPress={() =>
                 router.push({ pathname: '/place/todo', params: { placeId: place.id } })
               }
+            />
+          </Section>
+
+          <Section
+            title="Events"
+            footer={<Text>{`Events here in the next ${UPCOMING_DAYS} days.`}</Text>}
+          >
+            {place.events.map((event) => (
+              <Button
+                key={event.key}
+                onPress={() => openEvent(event)}
+                modifiers={[buttonStyle('plain')]}
+              >
+                <HStack spacing={12}>
+                  <Image systemName="circle.fill" color={event.color} size={12} />
+                  <VStack alignment="leading" spacing={2}>
+                    <Text modifiers={[lineLimit(2)]}>{event.title}</Text>
+                    <Text modifiers={[font({ textStyle: 'subheadline' }), secondary]}>
+                      {describeEventTime(event)}
+                    </Text>
+                  </VStack>
+                  <Spacer />
+                </HStack>
+              </Button>
+            ))}
+            <Button
+              label="Add Event"
+              systemImage="plus.circle"
+              onPress={() => createEvent(undefined, eventLocation(place))}
             />
           </Section>
 

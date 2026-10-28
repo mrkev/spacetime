@@ -5,8 +5,16 @@ jest.mock('expo-sqlite/kv-store', () => ({
 jest.mock('expo-calendar', () => ({}));
 jest.mock('../../time/CalendarProvider', () => ({}));
 
+import type { CalendarEvent } from '../../time/CalendarProvider';
 import type { LocationReminder } from '../locationReminders';
-import { buildMapPlaces, findMapPlace, isInCollection, pinColor } from '../places';
+import {
+  buildMapPlaces,
+  eventLocation,
+  findMapPlace,
+  isInCollection,
+  parseLocationTitle,
+  pinColor,
+} from '../places';
 import { REMINDERS_COLLECTION_ID, type Collection, type Place } from '../store';
 
 const bakery = { latitude: 19.4326, longitude: -99.1332 };
@@ -29,6 +37,23 @@ function todo(id: string, at: typeof bakery, placeName = 'Spot'): LocationRemind
     radius: 100,
     completed: false,
     reminder: {} as LocationReminder['reminder'],
+  };
+}
+
+function event(key: string, at: typeof bakery | null, title = 'Spot'): CalendarEvent {
+  return {
+    key,
+    title: key,
+    start: new Date(2026, 10, 1, 20),
+    end: new Date(2026, 10, 1, 22),
+    allDay: false,
+    color: '#AF52DE',
+    calendarTitle: 'Home',
+    location: at ? title : null,
+    place: at ? { ...at, title } : null,
+    editable: true,
+    recurring: false,
+    source: {} as CalendarEvent['source'],
   };
 }
 
@@ -60,6 +85,24 @@ describe('buildMapPlaces', () => {
     expect(unsaved[0].todos.map((t) => t.id)).toEqual(['a', 'b']);
   });
 
+  it('puts events at the place they’re at, or an unsaved one named after their location', () => {
+    const mapPlaces = buildMapPlaces(
+      [place('bakery', ['food'])],
+      [todo('a', elsewhere)],
+      [event('dinner', nearBakery), event('party', elsewhere), event('call', null)],
+    );
+    expect(mapPlaces.map((p) => [p.id, p.events.map((e) => e.key)])).toEqual([
+      ['bakery', ['dinner']],
+      [expect.stringMatching(/^unsaved:/), ['party']],
+    ]);
+    const [, market] = buildMapPlaces(
+      [place('bakery', ['food'])],
+      [],
+      [event('party', elsewhere, 'Market\nCalle 1\nCDMX')],
+    );
+    expect(market).toMatchObject({ name: 'Market', address: 'Calle 1, CDMX' });
+  });
+
   it('leaves out places waiting to move to Reminders', () => {
     expect(buildMapPlaces([place('old', [REMINDERS_COLLECTION_ID])], [])).toEqual([]);
   });
@@ -87,6 +130,20 @@ describe('pinColor', () => {
     );
     expect(pinColor(saved, collections, '#000')).toBe('#007AFF');
     expect(pinColor(unsaved, collections, '#000')).toBe('#FF9500');
+  });
+
+  it('uses the next event’s calendar for an unsaved place with only events', () => {
+    const [place] = buildMapPlaces([], [], [event('dinner', bakery)]);
+    expect(pinColor(place, collections, '#000')).toBe('#AF52DE');
+  });
+});
+
+describe('eventLocation', () => {
+  it('puts the address on the line after the name, like Calendar', () => {
+    const location = eventLocation({ ...bakery, name: 'Bakery', address: 'Calle 1' });
+    expect(location.title).toBe('Bakery\nCalle 1');
+    expect(parseLocationTitle(location.title)).toEqual({ name: 'Bakery', address: 'Calle 1' });
+    expect(parseLocationTitle('Home')).toEqual({ name: 'Home', address: undefined });
   });
 });
 

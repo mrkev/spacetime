@@ -34,6 +34,8 @@ export type CalendarEvent = {
   color: string;
   calendarTitle: string;
   location: string | null;
+  /** Where it is on the map, if its location has coordinates. */
+  place: Calendar.EventLocation | null;
   /** False for read-only calendars (subscriptions, birthdays, invitations we can't change). */
   editable: boolean;
   recurring: boolean;
@@ -71,6 +73,11 @@ type CalendarContextValue = {
   getReminder: (id: string) => CalendarReminder | undefined;
   /** Incomplete reminders across all lists (iOS only). */
   openReminders: CalendarReminder[];
+  /**
+   * The next occurrence of each event in the coming `UPCOMING_DAYS` that has a place on the map,
+   * soonest first.
+   */
+  upcomingEvents: CalendarEvent[];
   reminderLists: Calendar.ExpoCalendar[];
   /** The list new reminders go into by default. */
   defaultReminderList: () => Calendar.ExpoCalendar | null;
@@ -91,6 +98,9 @@ const CalendarContext = createContext<CalendarContextValue | null>(null);
 export function eventKey(id: string, start: Date): string {
   return `${id}:${start.getTime()}`;
 }
+
+/** How far ahead events show at their places on the map. */
+export const UPCOMING_DAYS = 30;
 
 const EMPTY_DAY: DayItems = { events: [], reminders: [] };
 const supportsReminders = Platform.OS === 'ios';
@@ -142,6 +152,24 @@ async function fetchCalendars(status: AccessStatus, remindersStatus: AccessStatu
   return lists;
 }
 
+async function fetchUpcomingEvents(calendars: Calendar.ExpoCalendar[]) {
+  if (calendars.length === 0) return [];
+  const now = new Date();
+  return Calendar.listEvents(calendars, now, addDays(startOfDay(now), UPCOMING_DAYS + 1));
+}
+
+/** The next occurrence of each event that has a place, soonest first. */
+function nextAtPlaces(events: CalendarEvent[]): CalendarEvent[] {
+  const now = new Date();
+  const next = new Map<string, CalendarEvent>();
+  for (const event of events) {
+    if (!event.place || event.end <= now) continue;
+    const seen = next.get(event.source.id);
+    if (!seen || event.start < seen.start) next.set(event.source.id, event);
+  }
+  return [...next.values()].sort((a, b) => a.start.getTime() - b.start.getTime());
+}
+
 async function fetchOpenReminders(lists: Calendar.ExpoCalendar[]) {
   if (!supportsReminders || lists.length === 0) return [];
   const results = await Promise.all(
@@ -159,6 +187,7 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
   );
   const [version, setVersion] = useState(0);
   const [openReminders, setOpenReminders] = useState<CalendarReminder[]>([]);
+  const [upcomingEvents, setUpcomingEvents] = useState<CalendarEvent[]>([]);
   const [eventCalendars, setEventCalendars] = useState<Calendar.ExpoCalendar[]>([]);
   const [reminderLists, setReminderLists] = useState<Calendar.ExpoCalendar[]>([]);
 
@@ -225,6 +254,30 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
     [calendarsById],
   );
 
+  const toEvent = useCallback(
+    (e: Calendar.ExpoCalendarEvent): CalendarEvent | null => {
+      const start = toDate(e.startDate);
+      const end = toDate(e.endDate) ?? start;
+      if (!start || !end) return null;
+      const calendar = calendarsById.get(e.calendarId);
+      return {
+        key: eventKey(e.id, start),
+        title: e.title || 'New Event',
+        start,
+        end,
+        allDay: e.allDay,
+        color: calendar?.color ?? '#007AFF',
+        calendarTitle: calendar?.title ?? '',
+        location: e.location,
+        place: e.structuredLocation ?? null,
+        editable: !!calendar?.allowsModifications,
+        recurring: e.recurrenceRule != null,
+        source: e,
+      };
+    },
+    [calendarsById],
+  );
+
   const loadMonth = useCallback(
     (key: string, month: Date): Promise<void> => {
       const existing = pending.current.get(key);
@@ -245,27 +298,12 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
         if (eventCalendars.length > 0) {
           const events = await Calendar.listEvents(eventCalendars, start, end);
           for (const e of events) {
-            const eventStart = toDate(e.startDate);
-            const eventEnd = toDate(e.endDate) ?? eventStart;
-            if (!eventStart || !eventEnd) continue;
-            const calendar = calendarsById.get(e.calendarId);
-            const event: CalendarEvent = {
-              key: eventKey(e.id, eventStart),
-              title: e.title || 'New Event',
-              start: eventStart,
-              end: eventEnd,
-              allDay: e.allDay,
-              color: calendar?.color ?? '#007AFF',
-              calendarTitle: calendar?.title ?? '',
-              location: e.location,
-              editable: !!calendar?.allowsModifications,
-              recurring: e.recurrenceRule != null,
-              source: e,
-            };
+            const event = toEvent(e);
+            if (!event) continue;
             // Add multi-day events to every day they touch (within this month).
-            const lastMoment = new Date(Math.max(eventStart.getTime(), eventEnd.getTime() - 1));
+            const lastMoment = new Date(Math.max(event.start.getTime(), event.end.getTime() - 1));
             for (
-              let day = startOfDay(eventStart);
+              let day = startOfDay(event.start);
               day <= lastMoment && day < end;
               day = addDays(day, 1)
             ) {
@@ -304,7 +342,7 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
       pending.current.set(key, task);
       return task;
     },
-    [eventCalendars, reminderLists, calendarsById, toReminder, bump],
+    [eventCalendars, reminderLists, toEvent, toReminder, bump],
   );
 
   const ensureMonths = useCallback(
@@ -328,6 +366,13 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
       const [year, month] = key.split('-').map(Number);
       loadMonth(key, new Date(year, month - 1, 1));
     }
+    fetchUpcomingEvents(eventCalendars)
+      .then((events) =>
+        setUpcomingEvents(
+          nextAtPlaces(events.map(toEvent).filter((e): e is CalendarEvent => e != null)),
+        ),
+      )
+      .catch((error) => console.warn('[calendar] upcoming events failed', error));
     fetchOpenReminders(reminderLists)
       .then((reminders) =>
         setOpenReminders(
@@ -338,7 +383,7 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
         ),
       )
       .catch((error) => console.warn('[calendar] reminders failed', error));
-  }, [loadMonth, reminderLists, toReminder]);
+  }, [loadMonth, eventCalendars, toEvent, reminderLists, toReminder]);
 
   // Reload whenever the calendars change. Events may also have changed in the Calendar app while
   // we were in the background, so re-read everything when the app becomes active.
@@ -435,6 +480,7 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
       ensureMonths,
       getReminder,
       openReminders,
+      upcomingEvents,
       reminderLists,
       defaultReminderList,
       defaultEventCalendar,
@@ -451,6 +497,7 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
       ensureMonths,
       getReminder,
       openReminders,
+      upcomingEvents,
       reminderLists,
       defaultReminderList,
       defaultEventCalendar,

@@ -1,4 +1,8 @@
+import type { EventLocation } from 'expo-calendar';
+
+import { formatRelativeDay, formatTime } from '../lib/dates';
 import { distanceMeters, type Coordinate } from '../lib/geo';
+import { useCalendar, type CalendarEvent } from '../time/CalendarProvider';
 import {
   updateLocationReminder,
   useLocationReminders,
@@ -14,27 +18,34 @@ import {
   type Place,
 } from './store';
 
-/** How close (in meters) a todo has to be to a place to belong to it. */
+/** How close (in meters) a todo or event has to be to a place to belong to it. */
 export const LINK_RADIUS = 30;
 
 const UNSAVED_PREFIX = 'unsaved:';
 
 /**
- * A pin on the map: a saved place, or a spot with todos that isn't saved in any collection. Todos
- * are location reminders, and belong to the nearest place within `LINK_RADIUS`.
+ * A pin on the map: a saved place, or a spot with todos or upcoming events that isn't saved in any
+ * collection. Todos (location reminders) and events belong to the nearest place within
+ * `LINK_RADIUS`.
  */
 export type MapPlace = Coordinate & {
   /** The saved place's ID, or `unsaved:<latitude>,<longitude>`. */
   id: string;
   name: string;
   address?: string;
-  /** Null if the place only exists because of its todos. */
+  /** Null if the place only exists because of its todos or events. */
   saved: Place | null;
   collectionIds: string[];
   todos: LocationReminder[];
+  /** Upcoming events here, soonest first. */
+  events: CalendarEvent[];
 };
 
-export function buildMapPlaces(places: Place[], todos: LocationReminder[]): MapPlace[] {
+export function buildMapPlaces(
+  places: Place[],
+  todos: LocationReminder[],
+  events: CalendarEvent[] = [],
+): MapPlace[] {
   const saved: MapPlace[] = places
     .filter((p) => !isLegacyReminder(p))
     .map((place) => ({
@@ -46,26 +57,66 @@ export function buildMapPlaces(places: Place[], todos: LocationReminder[]): MapP
       saved: place,
       collectionIds: place.collectionIds,
       todos: [],
+      events: [],
     }));
   const unsaved: MapPlace[] = [];
-  for (const todo of todos) {
-    const owner = nearest(saved, todo) ?? nearest(unsaved, todo);
-    if (owner) {
-      owner.todos.push(todo);
-      continue;
-    }
-    unsaved.push({
-      id: `${UNSAVED_PREFIX}${todo.latitude.toFixed(6)},${todo.longitude.toFixed(6)}`,
-      name: todo.placeName,
-      address: todo.address,
-      latitude: todo.latitude,
-      longitude: todo.longitude,
+  const ownerAt = (at: Coordinate, name: string, address: string | undefined) => {
+    const owner = nearest(saved, at) ?? nearest(unsaved, at);
+    if (owner) return owner;
+    const place: MapPlace = {
+      id: `${UNSAVED_PREFIX}${at.latitude.toFixed(6)},${at.longitude.toFixed(6)}`,
+      name,
+      address,
+      latitude: at.latitude,
+      longitude: at.longitude,
       saved: null,
       collectionIds: [],
-      todos: [todo],
-    });
+      todos: [],
+      events: [],
+    };
+    unsaved.push(place);
+    return place;
+  };
+  for (const todo of todos) {
+    ownerAt(todo, todo.placeName, todo.address).todos.push(todo);
+  }
+  for (const event of events) {
+    if (!event.place) continue;
+    const { name, address } = parseLocationTitle(event.place.title);
+    ownerAt(event.place, name, address).events.push(event);
   }
   return [...saved, ...unsaved];
+}
+
+/**
+ * An event's location for a place. Like Calendar, it's the name with the address on the next line.
+ */
+export function eventLocation(
+  place: Coordinate & { name: string; address?: string },
+): EventLocation {
+  return {
+    title: place.address ? `${place.name}\n${place.address}` : place.name,
+    latitude: place.latitude,
+    longitude: place.longitude,
+  };
+}
+
+/** When an event is, for a list of a place's events: "Tomorrow · 8:00 PM · Repeats". */
+export function describeEventTime(event: CalendarEvent): string {
+  return [
+    formatRelativeDay(event.start),
+    event.allDay ? 'All Day' : formatTime(event.start),
+    event.recurring ? 'Repeats' : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
+/** The name and address in an event's location (see `eventLocation`). */
+export function parseLocationTitle(title: string): { name: string; address?: string } {
+  const [name, ...rest] = title.split('\n');
+  const address = rest.join(', ').trim();
+  return { name: name.trim() || 'Dropped Pin', address: address || undefined };
 }
 
 function nearest(candidates: MapPlace[], to: Coordinate): MapPlace | null {
@@ -105,7 +156,8 @@ function parseUnsavedId(id: string): Coordinate | null {
 export function useMapPlaces(): MapPlace[] {
   const { places } = useSpaceState();
   const todos = useLocationReminders();
-  return buildMapPlaces(places, todos);
+  const { upcomingEvents } = useCalendar();
+  return buildMapPlaces(places, todos, upcomingEvents);
 }
 
 /** The place's collections, in its order, skipping any that were deleted. */
@@ -119,10 +171,14 @@ export function placeCollections(
   });
 }
 
-/** Its first collection's color or, if it's in none, the Reminders collection's. */
+/**
+ * Its first collection's color. If it's in none: the Reminders collection's if it has todos, or
+ * else its next event's calendar's.
+ */
 export function pinColor(place: MapPlace, collections: Collection[], fallback: string): string {
   const [first] = placeCollections(place, collections);
   if (first) return first.color;
+  if (place.todos.length === 0 && place.events.length > 0) return place.events[0].color;
   return collections.find((c) => c.id === REMINDERS_COLLECTION_ID)?.color ?? fallback;
 }
 

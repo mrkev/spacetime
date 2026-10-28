@@ -56,6 +56,7 @@ export default function RootLayout() {
               name="place/reminder/[id]"
               options={{ presentation: 'modal', title: '' }}
             />
+            <Stack.Screen name="event/place" options={{ presentation: 'modal', title: '' }} />
             <Stack.Screen
               name="collections"
               options={{ presentation: 'modal', headerShown: false }}

@@ -1,3 +1,4 @@
+import type { EventLocation } from 'expo-calendar';
 import { router } from 'expo-router';
 import { ActionSheetIOS, Alert, Linking, Platform } from 'react-native';
 
@@ -44,7 +45,7 @@ function showOptions(title: string | undefined, options: Option[], onCancel?: ()
   }
 }
 
-type Span = 'this' | 'future';
+export type Span = 'this' | 'future';
 
 /** Like Calendar, ask whether a change to a repeating event applies to later ones too. */
 function chooseSpan(event: CalendarEvent, verb: 'Save' | 'Delete'): Promise<Span | null> {
@@ -64,7 +65,7 @@ function chooseSpan(event: CalendarEvent, verb: 'Save' | 'Delete'): Promise<Span
   });
 }
 
-function occurrence(event: CalendarEvent, span: Span) {
+export function occurrence(event: CalendarEvent, span: Span) {
   if (span === 'this') return event.source;
   // Rebinds the event to the "this and future" span, so update/delete apply to the rest of the series.
   return event.source.getOccurrenceSync({
@@ -88,7 +89,8 @@ export function showInReminders(reminderId: string) {
 export function useTimeActions() {
   const { status, requestAccess, defaultEventCalendar, writableCalendar, refresh } = useCalendar();
 
-  const createEvent = async (start?: Date) => {
+  /** Opens the system editor for a new event, optionally at a place. */
+  const createEvent = async (start?: Date, place?: EventLocation) => {
     if (status !== 'granted') {
       await requestAccess();
       return;
@@ -101,7 +103,11 @@ export function useTimeActions() {
     const startDate = start ?? defaultStart();
     const endDate = new Date(startDate.getTime() + 60 * 60_000);
     // Use the system editor so events get every field Calendar supports.
-    const result = await calendar.addEventWithForm({ startDate, endDate });
+    const result = await calendar.addEventWithForm({
+      startDate,
+      endDate,
+      ...(place ? { structuredLocation: place } : {}),
+    });
     if (result.action === 'saved' || result.action === 'done') refresh();
   };
 
@@ -187,7 +193,7 @@ export function useTimeActions() {
       return;
     }
     try {
-      await calendar.createEvent({
+      const created = await calendar.createEvent({
         title: copied.title,
         startDate: start.toISOString(),
         endDate: new Date(start.getTime() + copied.durationMinutes * 60_000).toISOString(),
@@ -198,6 +204,7 @@ export function useTimeActions() {
         alarms: copied.alarms,
         availability: copied.availability,
       });
+      if (copied.place) await created.setStructuredLocation(copied.place);
     } catch (error) {
       reportFailure('paste event', error);
     }
@@ -211,6 +218,16 @@ export function useTimeActions() {
 
   // Calendar puts the duplicate at the same time, alongside the original.
   const duplicateEvent = (event: CalendarEvent) => insertCopy(snapshotEvent(event), event.start);
+
+  /** Picks a place for the event, asking first whether a repeating event's later ones move too. */
+  const setEventPlace = async (event: CalendarEvent) => {
+    const span = await chooseSpan(event, 'Save');
+    if (!span) return;
+    router.push({
+      pathname: '/event/place',
+      params: { key: event.key, start: event.start.toISOString(), span },
+    });
+  };
 
   const cutEvent = async (event: CalendarEvent) => {
     copyEvent(event);
@@ -226,6 +243,7 @@ export function useTimeActions() {
     rescheduleEvent,
     deleteEvent,
     duplicateEvent,
+    setEventPlace,
     cutEvent,
     copyEvent,
     pasteEvent,

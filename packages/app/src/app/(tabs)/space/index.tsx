@@ -21,7 +21,8 @@ import MapView, {
 } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-import { Icon, icons } from '../../../components/Icon';
+import { Icon, icons, type IconName } from '../../../components/Icon';
+import { formatRelativeDay } from '../../../lib/dates';
 import {
   searchPlaces,
   searchSuggestion,
@@ -44,6 +45,8 @@ import {
 import { REMINDERS_COLLECTION_ID, useSpaceState, type Collection } from '../../../space/store';
 
 const ALL = 'all';
+/** The filter for places with upcoming events. */
+const UPCOMING = 'upcoming';
 const USER_DELTA = 0.03;
 const SEARCH_HEIGHT = 46;
 /**
@@ -84,7 +87,11 @@ export default function SpaceScreen() {
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   const inFilter = (id: string) =>
-    id === ALL ? mapPlaces : mapPlaces.filter((p) => isInCollection(p, id));
+    id === ALL
+      ? mapPlaces
+      : id === UPCOMING
+        ? mapPlaces.filter((p) => p.events.length > 0)
+        : mapPlaces.filter((p) => isInCollection(p, id));
   const visiblePlaces = inFilter(filter);
   const total = mapPlaces.length;
   const reminderColor =
@@ -235,7 +242,7 @@ export default function SpaceScreen() {
       params: {
         latitude: String(coord.latitude),
         longitude: String(coord.longitude),
-        ...(filter !== ALL ? { collectionId: filter } : {}),
+        ...(filter !== ALL && filter !== UPCOMING ? { collectionId: filter } : {}),
         ...(prefill ?? {}),
       },
     });
@@ -321,6 +328,15 @@ export default function SpaceScreen() {
           count={total}
           selected={filter === ALL}
           onPress={() => selectFilter(ALL)}
+          theme={theme}
+        />
+        <Chip
+          label="Upcoming"
+          icon={icons.calendar}
+          color={theme.tint}
+          count={inFilter(UPCOMING).length}
+          selected={filter === UPCOMING}
+          onPress={() => selectFilter(UPCOMING)}
           theme={theme}
         />
         {collections.map((collection) => (
@@ -462,6 +478,7 @@ function Chip({
   onPress,
   theme,
   collection,
+  ...props
 }: {
   label: string;
   count: number;
@@ -469,9 +486,13 @@ function Chip({
   onPress: () => void;
   theme: Theme;
   collection?: Collection;
+  /** For a filter that isn't a collection. */
+  color?: string;
+  icon?: IconName;
 }) {
-  const color = collection?.color ?? theme.text;
-  const isReminders = collection?.id === REMINDERS_COLLECTION_ID;
+  const color = collection?.color ?? props.color ?? theme.text;
+  const icon = collection?.id === REMINDERS_COLLECTION_ID ? icons.bell : props.icon;
+  const colored = !!collection || !!props.color;
   return (
     <Pressable
       onPress={onPress}
@@ -479,17 +500,15 @@ function Chip({
       accessibilityRole="button"
       accessibilityState={{ selected }}
     >
-      {collection ? (
-        isReminders ? (
-          <Icon name={icons.bell} color={selected ? '#fff' : color} size={13} />
-        ) : (
-          <View style={[styles.chipDot, { backgroundColor: selected ? '#fff' : color }]} />
-        )
+      {icon ? (
+        <Icon name={icon} color={selected ? '#fff' : color} size={13} />
+      ) : collection ? (
+        <View style={[styles.chipDot, { backgroundColor: selected ? '#fff' : color }]} />
       ) : null}
       <Text
         style={[
           styles.chipLabel,
-          { color: selected ? (collection ? '#fff' : theme.background) : theme.text },
+          { color: selected ? (colored ? '#fff' : theme.background) : theme.text },
         ]}
       >
         {label}
@@ -497,7 +516,7 @@ function Chip({
       <Text
         style={[
           styles.chipCount,
-          { color: selected ? (collection ? '#fff' : theme.background) : theme.secondaryText },
+          { color: selected ? (colored ? '#fff' : theme.background) : theme.secondaryText },
         ]}
       >
         {count}
@@ -513,12 +532,17 @@ function Surface({ style, ...props }: React.ComponentProps<typeof View>) {
   return <View style={[style, cardStyle(theme)]} {...props} />;
 }
 
-/** Its collections and how many todos it has, e.g. "Favorites, Food · 2 todos". */
+/**
+ * Its collections, its next event, and how many todos it has, e.g.
+ * "Favorites, Food · Dinner, Tomorrow · 2 todos".
+ */
 function describePlace(place: MapPlace, collections: Collection[]): string {
   const names = placeCollections(place, collections).map((c) => c.name);
   const todos = place.todos.length;
+  const [next] = place.events;
   return [
     names.length > 0 ? names.join(', ') : 'Not saved',
+    next ? `${next.title}, ${formatRelativeDay(next.start)}` : null,
     todos > 0 ? `${todos} ${todos === 1 ? 'todo' : 'todos'}` : null,
   ]
     .filter(Boolean)

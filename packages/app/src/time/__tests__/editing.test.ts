@@ -13,6 +13,7 @@ function makeEvent(start: Date, end: Date, overrides: Partial<CalendarEvent> = {
     color: '#FF3B30',
     calendarTitle: 'Home',
     location: null,
+    place: null,
     editable: true,
     recurring: false,
     source: {} as CalendarEvent['source'],

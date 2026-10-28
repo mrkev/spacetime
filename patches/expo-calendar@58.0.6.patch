@@ -1,8 +1,48 @@
+diff --git a/build/Calendar.d.ts b/build/Calendar.d.ts
+index c64d87037cb03a8e442fe087d6f6efd9e5f1a9ac..ce59a7c2f07ee91e20e3b6a2b1bfb676b2e0f5b8 100644
+--- a/build/Calendar.d.ts
++++ b/build/Calendar.d.ts
+@@ -126,7 +126,7 @@ export declare function getRemindersPermissions(): Promise<PermissionResponse>;
+  * @platform ios
+  */
+ export declare function getSourcesSync(): Source[];
+-export type { ModifiableEventProperties, ModifiableReminderProperties, ModifiableCalendarProperties, AddEventWithFormOptions, } from './ExpoCalendar.types';
++export type { ModifiableEventProperties, ModifiableReminderProperties, ModifiableCalendarProperties, AddEventWithFormOptions, EventLocation, } from './ExpoCalendar.types';
+ export type { PermissionResponse, Alarm, AlarmLocation, CalendarDialogParams, DaysOfTheWeek, DialogEventResult, OpenEventDialogResult, OpenEventPresentationOptions, PermissionExpiration, PermissionHookOptions, PresentationOptions, RecurrenceRule, RecurringEventOptions, Source, } from './legacy/Calendar';
+ export { AlarmMethod, AttendeeRole, AttendeeStatus, AttendeeType, Availability, CalendarAccessLevel, CalendarDialogResultActions, CalendarType, DayOfTheWeek, EntityTypes, EventAccessLevel, EventStatus, Frequency, MonthOfTheYear, ReminderStatus, SourceType, } from './legacy/Calendar';
+ /**
 diff --git a/build/ExpoCalendar.types.d.ts b/build/ExpoCalendar.types.d.ts
-index d5be503beb9eb567965180e305d84d6d18bdf369..f5a7e5f02694705268d863e57e24d9d90f5c4ae0 100644
+index d5be503beb9eb567965180e305d84d6d18bdf369..a1061804e26d01457622ee839801c402450b6948 100644
 --- a/build/ExpoCalendar.types.d.ts
 +++ b/build/ExpoCalendar.types.d.ts
-@@ -33,6 +33,11 @@ export declare class ExpoCalendar {
+@@ -9,6 +9,11 @@ export type AddEventWithFormOptions = PresentationOptions & {
+     allDay?: boolean;
+     notes?: string;
+     location?: string;
++    /**
++     * A place on the map for the event's location. Its title replaces `location`.
++     * @platform ios
++     */
++    structuredLocation?: EventLocation;
+     /**
+      * @platform ios
+      */
+@@ -19,6 +24,14 @@ export type AddEventWithFormOptions = PresentationOptions & {
+     alarms?: Alarm[];
+     recurrenceRule?: RecurrenceRule;
+ };
++/**
++ * A place on the map, for an event's location. The title is what the event shows as its location.
++ */
++export type EventLocation = {
++    title: string;
++    latitude: number;
++    longitude: number;
++};
+ export type ModifiableCalendarProperties = Pick<ExpoCalendar, 'color' | 'title'>;
+ export type ModifiableEventProperties = Pick<ExpoCalendarEvent, 'title' | 'location' | 'timeZone' | 'url' | 'notes' | 'alarms' | 'recurrenceRule' | 'availability' | 'startDate' | 'endDate' | 'allDay'>;
+ export type ModifiableReminderProperties = Pick<ExpoCalendarReminder, 'title' | 'location' | 'timeZone' | 'url' | 'notes' | 'alarms' | 'recurrenceRule' | 'startDate' | 'dueDate' | 'completed' | 'completionDate'>;
+@@ -33,6 +46,11 @@ export declare class ExpoCalendar {
       * Visible name of the calendar.
       */
      title: string;
@@ -14,7 +54,32 @@ index d5be503beb9eb567965180e305d84d6d18bdf369..f5a7e5f02694705268d863e57e24d9d9
      /**
       * ID of the source to be used for the calendar. Likely the same as the source for any other
       * locally stored calendars.
-@@ -345,6 +350,10 @@ export declare class ExpoCalendarReminder {
+@@ -183,6 +201,11 @@ export declare class ExpoCalendarEvent {
+      * Location field of the event.
+      */
+     location: string | null;
++    /**
++     * Where the event is on the map, if its location has coordinates.
++     * @platform ios
++     */
++    structuredLocation?: EventLocation | null;
+     /**
+      * Date when the event record was created.
+      * @platform ios
+@@ -313,6 +336,12 @@ export declare class ExpoCalendarEvent {
+      * @return An event instance.
+      */
+     getOccurrenceSync(recurringEventOptions?: RecurringEventOptions): ExpoCalendarEvent;
++    /**
++     * Sets the event's location to a place on the map, or clears it with `null`. Applies to the span
++     * the event was got with (see `getOccurrenceSync`).
++     * @platform ios
++     */
++    setStructuredLocation(location: EventLocation | null): Promise<void>;
+     /**
+      * Gets all attendees for a given event (or instance of a recurring event).
+      * @return An array of [`Attendee`](#attendee) associated with the specified event.
+@@ -345,6 +374,10 @@ export declare class ExpoCalendarReminder {
       * Internal ID that represents this reminder on the device.
       */
      id?: string;
@@ -62,7 +127,7 @@ index 775db49c2346574752c0af4b3b3e25d98cc2741a..d3ec089e77ff1b1bd7349911ed3c3cb2
      onDismiss()
      promise.resolve(DialogViewResponse(action: .canceled))
 diff --git a/ios/Next/CalendarNextModule.swift b/ios/Next/CalendarNextModule.swift
-index 656705d13213cfbeb88c8263beb08b7ec4ddd2fe..760362e7bb75066f894d4ee610c3aeef73912688 100644
+index 656705d13213cfbeb88c8263beb08b7ec4ddd2fe..ee3899ef83da449a922b7fe3967014cefd0b3158 100644
 --- a/ios/Next/CalendarNextModule.swift
 +++ b/ios/Next/CalendarNextModule.swift
 @@ -249,6 +249,14 @@ public final class CalendarNextModule: Module {
@@ -80,7 +145,51 @@ index 656705d13213cfbeb88c8263beb08b7ec4ddd2fe..760362e7bb75066f894d4ee610c3aeef
        Property("allowsModifications") { (expoCalendar: ExpoCalendar) -> Bool in
          guard let calendar = expoCalendar.calendar else {
            return false
-@@ -553,6 +561,12 @@ public final class CalendarNextModule: Module {
+@@ -352,6 +360,10 @@ public final class CalendarNextModule: Module {
+           event.title = options.title
+           event.notes = options.notes
+           event.location = options.location
++          if let place = options.structuredLocation {
++            event.location = place.title
++            event.structuredLocation = place.structuredLocation
++          }
+           if let startDate = options.startDate {
+             event.startDate = try requireDate(from: startDate)
+           }
+@@ -402,6 +414,32 @@ public final class CalendarNextModule: Module {
+         expoEvent.event?.location
+       }
+ 
++      // Where the event is on the map, if its location has coordinates (one picked from search in
++      // Calendar does).
++      Property("structuredLocation") { (expoEvent: ExpoCalendarEvent) -> [String: Any]? in
++        guard let location = expoEvent.event?.structuredLocation,
++          let coordinate = location.geoLocation?.coordinate
++        else {
++          return nil
++        }
++        return [
++          "title": location.title ?? "",
++          "latitude": coordinate.latitude,
++          "longitude": coordinate.longitude,
++        ]
++      }
++
++      // Sets the event's location to a place on the map, or clears it.
++      AsyncFunction("setStructuredLocation") { (expoEvent: ExpoCalendarEvent, place: EventLocation?) throws in
++        try calendarAccessGuard?.ensureCalendarFullAccess()
++        guard let event = expoEvent.event else {
++          throw ItemNoLongerExistsException()
++        }
++        event.location = place?.title
++        event.structuredLocation = place?.structuredLocation
++        try eventStore.save(event, span: expoEvent.span ?? .thisEvent, commit: true)
++      }
++
+       Property("creationDate") { (expoEvent: ExpoCalendarEvent) in
+         dateFormatter.string(from: expoEvent.event?.creationDate ?? Date())
+       }
+@@ -553,6 +591,12 @@ public final class CalendarNextModule: Module {
          expoReminder.reminder?.calendarItemIdentifier
        }
  
@@ -93,3 +202,40 @@ index 656705d13213cfbeb88c8263beb08b7ec4ddd2fe..760362e7bb75066f894d4ee610c3aeef
        Property("calendarId") { (expoReminder: ExpoCalendarReminder) in
          expoReminder.reminder?.calendar?.calendarIdentifier
        }
+diff --git a/ios/Records/CalendarRecords.swift b/ios/Records/CalendarRecords.swift
+index 0015eec777a9cceb9a686ce0cb2cc7e710e5b525..f92afbb23e4a88af0d050065491cf2fed87538a5 100644
+--- a/ios/Records/CalendarRecords.swift
++++ b/ios/Records/CalendarRecords.swift
+@@ -1,5 +1,23 @@
++import CoreLocation
++import EventKit
+ import ExpoModulesCore
+ 
++/// A place on the map, for an event's location: what Calendar's own location search sets.
++struct EventLocation: Record {
++  @Field
++  var title: String = ""
++  @Field
++  var latitude: Double = 0
++  @Field
++  var longitude: Double = 0
++
++  var structuredLocation: EKStructuredLocation {
++    let location = EKStructuredLocation(title: title)
++    location.geoLocation = CLLocation(latitude: latitude, longitude: longitude)
++    return location
++  }
++}
++
+ enum CalendarEntity: String, Enumerable {
+   case event
+   case reminder
+@@ -145,6 +163,8 @@ struct AddEventWithFormOptions: Record {
+   @Field
+   var location: String?
+   @Field
++  var structuredLocation: EventLocation?
++  @Field
+   var url: String?
+   @Field
+   var alarms: [Alarm]?
