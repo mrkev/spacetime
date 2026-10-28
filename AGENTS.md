@@ -62,6 +62,45 @@ xcrun devicectl device process launch --terminate-existing \
 
 Launching fails with "Locked" if the phone is locked; the app is still installed, so just tell the user to open it.
 
+## Testing in the Simulator (only when asked)
+
+Only do this when the user asks you to test something yourself; otherwise they test on the phone. You can drive the app in the iOS Simulator: `xcrun simctl` runs the simulator (boot, launch, screenshots, fake location, permissions) but can't tap, swipe, or type, so the taps happen in an XCUITest. `scripts/uitests/` in `packages/app/` has everything:
+
+- `run.sh [testName ...]` does the whole run:
+  - generates `ios/` if it's missing and adds the UI test target;
+  - boots a simulator and starts Metro if it isn't running;
+  - builds a Debug build into `ios/build-uitests` and reinstalls it, so every run starts from a fresh install;
+  - grants Calendar, Reminders, and location access;
+  - runs the tests and prints the results and the files they wrote.
+
+  The first build takes several minutes; later ones take about a minute. Set these to change it:
+  - `SHOTS` chooses the output folder. It's emptied first, so use your scratchpad.
+  - `SIMULATOR_ID` chooses the simulator.
+  - `KEEP_APP_DATA=1` keeps the app's saved data between runs. Tests then start wherever the last run left the app; the Time tab, for example, reopens at the level it was last on.
+
+- `SpacetimeUITests.swift` holds the tests and their helpers:
+  - `shot(name)` saves a screenshot.
+  - `note(name, text)` saves text, such as element frames.
+  - `tree()` saves the accessibility tree.
+  - `openToday()` opens today's day view.
+  - A failing test saves `failure.png` and `failure.txt` (the tree) automatically.
+
+  Add a test for what you're checking and run just that one. Remove one-off tests before committing; keep helpers and tests worth rerunning. Any other `.swift` file in the folder is compiled in too.
+
+- `add-target.rb` adds the `SpacetimeUITests` target to the generated Xcode project, pointing at the Swift files in the repo. `expo prebuild --clean` drops the target, but `run.sh` adds it back each run. Never put test files in `ios/`; prebuild deletes them.
+- The test opens the dev client with flags (`__expo_disable_onboarding`, `__expo_disable_auto_launch`, `__expo_disable_fab`) that keep the developer menu and the floating "Tools" button from covering the app. On a fresh install the menu otherwise opens over the tab bar, and the button covers the day view's "+". If you see either in a screenshot, check that `setUp` still passes those flags.
+
+Look at the screenshots with your file-reading tool, which shows images. Things to know:
+
+- **Finding elements:** an RN `accessibilityLabel` becomes the element's label and a `testID` its identifier, so query by those (`app.buttons["Add"]`, `app.tabBars.buttons["Time"]`, `app.textFields["Title"]`). When a query finds nothing, call `tree()` and search the saved text for the element. Prefer `waitForExistence(timeout:)` over `sleep`. If an element you need has no label, adding an `accessibilityLabel` (or `testID`) to the component is fine.
+- **Navigate by tapping.** Opening `spacetime://` links in the dev client didn't reliably reach a screen.
+- **The Debug build needs Metro.** The test's `setUp` points the dev client at `localhost:8081`. If another agent's Metro is already on :8081 for this checkout, `run.sh` uses it. If Metro is serving stale code (its watcher sometimes misses edits), stop it only if you started it; otherwise say so.
+- **Don't take over a simulator someone else is using.** Another agent may be using the booted simulator. If it is, pass a different `SIMULATOR_ID` (`xcrun simctl list devices available`).
+- **The Simulator has its own Calendar and Reminders**, which start empty. Create the events or reminders a test needs, in the test or through the app. Set a location with `xcrun simctl location <id> set <lat>,<lng>`.
+- **Saved app state** (such as the day view's zoom) is in a SQLite key-value table: `sqlite3 "$(xcrun simctl get_app_container <id> com.mrkev.spacetime data)/Documents/SQLite/ExpoSQLiteStorage" "select key from storage"`. Terminate the app before changing it.
+- **Keyboard-layout bugs often don't show up.** With a hardware keyboard connected, the Simulator hides the on-screen keyboard. Leave those to the phone unless asked.
+- Don't install other tools, such as `idb`, for this, and don't run UI tests on the phone.
+
 ## Rules
 
 - If `ios/` and `android/` directories do not exist, they are generated (Continuous Native Generation). Never create or edit them by hand — configure native behavior in `app.json` and config plugins.
