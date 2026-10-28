@@ -10,3 +10,10 @@ patchedDependencies:
 allowBuilds:
   '@parcel/watcher': false
   unrs-resolver: false
+
+peerDependencyRules:
+  allowedVersions:
+    # react-native-worklets pulls in the latest @react-native/metro-config, but the community CLI
+    # plugin pins its (optional) peer to its own exact version. Expo uses @expo/metro-config, not
+    # the community CLI, so the mismatch doesn't matter.
+    '@react-native/community-cli-plugin>@react-native/metro-config': '*'
