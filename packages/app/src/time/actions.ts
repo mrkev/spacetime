@@ -1,6 +1,6 @@
 import { router } from 'expo-router';
 import { useCallback } from 'react';
-import { ActionSheetIOS, Alert, Platform } from 'react-native';
+import { ActionSheetIOS, Alert, Linking, Platform } from 'react-native';
 
 import { REMINDERS_COLLECTION_ID } from '../space/store';
 import { useCalendar, type CalendarEvent, type CalendarReminder } from './CalendarProvider';
@@ -78,6 +78,13 @@ function occurrence(event: CalendarEvent, span: Span) {
 function reportFailure(action: string, error: unknown) {
   console.warn(`[calendar] failed to ${action}`, error);
   Alert.alert(`Couldn’t ${action[0].toUpperCase()}${action.slice(1)}`, String(error));
+}
+
+/** Opens a reminder in the Reminders app (an undocumented URL), or just the app if that fails. */
+export function showInReminders(reminderId: string) {
+  Linking.openURL(`x-apple-reminderkit://REMCDReminder/${reminderId}`).catch(() =>
+    Linking.openURL('x-apple-reminderkit://').catch(() => {}),
+  );
 }
 
 export function useTimeActions() {

@@ -40,17 +40,7 @@
       [
         "expo-location",
         {
-          "locationWhenInUsePermission": "Spacetime shows where you are on the map.",
-          "locationAlwaysAndWhenInUsePermission": "Spacetime uses your location in the background to remind you when you arrive at or leave a saved place.",
-          "isIosBackgroundLocationEnabled": true,
-          "isAndroidBackgroundLocationEnabled": true,
-          "isAndroidForegroundServiceEnabled": false
-        }
-      ],
-      [
-        "expo-notifications",
-        {
-          "enableRemoteNotifications": false
+          "locationWhenInUsePermission": "Spacetime shows where you are on the map."
         }
       ],
       "expo-font"

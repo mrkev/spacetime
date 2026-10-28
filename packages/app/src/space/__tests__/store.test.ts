@@ -19,13 +19,6 @@ function loadStore(): Store {
 }
 
 const coords = { latitude: 37.78, longitude: -122.41 };
-const reminder = {
-  title: 'Buy milk',
-  trigger: 'arrive' as const,
-  radius: 250,
-  repeat: false,
-  enabled: true,
-};
 
 describe('space store', () => {
   it('seeds the Reminders collection', () => {
@@ -45,36 +38,6 @@ describe('space store', () => {
       'Coffee',
     );
     expect(second.getSpaceState().places.some((p) => p.name === 'Blue Bottle')).toBe(true);
-  });
-
-  it('only keeps reminder settings on places in the Reminders collection', () => {
-    const store = loadStore();
-    const other = store
-      .getSpaceState()
-      .collections.find((c) => c.id !== store.REMINDERS_COLLECTION_ID)!;
-    const place = store.addPlace({ ...coords, collectionId: other.id, name: 'Park', reminder });
-    expect(place.reminder).toBeUndefined();
-
-    store.updatePlace(place.id, { collectionId: store.REMINDERS_COLLECTION_ID, reminder });
-    const moved = store.getSpaceState().places.find((p) => p.id === place.id)!;
-    expect(store.isActiveReminder(moved)).toBe(true);
-
-    store.updatePlace(place.id, { collectionId: other.id });
-    expect(store.getSpaceState().places.find((p) => p.id === place.id)?.reminder).toBeUndefined();
-  });
-
-  it('resets the observed geofence state when a reminder moves', () => {
-    const store = loadStore();
-    const place = store.addPlace({
-      ...coords,
-      collectionId: store.REMINDERS_COLLECTION_ID,
-      name: 'Store',
-      reminder: { ...reminder, lastState: 'inside' },
-    });
-    store.updatePlace(place.id, { latitude: coords.latitude + 0.01 });
-    expect(
-      store.getSpaceState().places.find((p) => p.id === place.id)?.reminder?.lastState,
-    ).toBeUndefined();
   });
 
   it('deletes a collection with its places but never the Reminders collection', () => {

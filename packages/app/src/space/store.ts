@@ -3,7 +3,10 @@ import { useSyncExternalStore } from 'react';
 
 import { createId } from '../lib/id';
 
-/** The built-in collection whose places trigger a notification when you're nearby. */
+/**
+ * The built-in collection of location reminders. Its places are reminders in Apple Reminders (see
+ * `locationReminders.ts`); only its name and color are stored here.
+ */
 export const REMINDERS_COLLECTION_ID = 'reminders';
 
 export type Collection = {
@@ -13,20 +16,12 @@ export type Collection = {
   createdAt: number;
 };
 
-export type ReminderTrigger = 'arrive' | 'leave';
-
-export type LocationReminder = {
-  /** What to remind the user about, e.g. "Pick up dry cleaning". */
+/** A location reminder from before they moved to Apple Reminders. */
+export type LegacyReminder = {
   title: string;
-  trigger: ReminderTrigger;
-  /** Geofence radius in meters. */
+  trigger: 'arrive' | 'leave';
   radius: number;
-  /** Keep the reminder active after it fires instead of completing it. */
-  repeat: boolean;
   enabled: boolean;
-  /** Last geofence state we observed, used to only notify on real transitions. */
-  lastState?: 'inside' | 'outside';
-  lastFiredAt?: number;
 };
 
 export type Place = {
@@ -38,8 +33,8 @@ export type Place = {
   latitude: number;
   longitude: number;
   createdAt: number;
-  /** Present only for places in the Reminders collection. */
-  reminder?: LocationReminder;
+  /** Only on places saved in the Reminders collection by older versions, until they're moved. */
+  reminder?: LegacyReminder;
 };
 
 export type SpaceState = {
@@ -129,19 +124,10 @@ export function deleteCollection(id: string) {
 
 // Places
 
-export type PlaceInput = Omit<Place, 'id' | 'createdAt'>;
-
-function normalizePlace<T extends PlaceInput>(place: T): T {
-  // Only places in the Reminders collection carry reminder settings.
-  if (place.collectionId !== REMINDERS_COLLECTION_ID && place.reminder) {
-    const { reminder: _reminder, ...rest } = place;
-    return rest as T;
-  }
-  return place;
-}
+export type PlaceInput = Omit<Place, 'id' | 'createdAt' | 'reminder'>;
 
 export function addPlace(input: PlaceInput): Place {
-  const place: Place = normalizePlace({ ...input, id: createId(), createdAt: Date.now() });
+  const place: Place = { ...input, id: createId(), createdAt: Date.now() };
   setState({ ...state, places: [...state.places, place] });
   return place;
 }
@@ -149,46 +135,10 @@ export function addPlace(input: PlaceInput): Place {
 export function updatePlace(id: string, changes: Partial<PlaceInput>) {
   setState({
     ...state,
-    places: state.places.map((p) => {
-      if (p.id !== id) return p;
-      const next = normalizePlace({ ...p, ...changes });
-      // Moving or resizing a geofence invalidates whatever state we last observed.
-      if (next.reminder && p.reminder && geofenceChanged(p, next)) {
-        next.reminder = { ...next.reminder, lastState: undefined };
-      }
-      return next;
-    }),
-  });
-}
-
-function geofenceChanged(a: Place, b: Place): boolean {
-  return (
-    a.latitude !== b.latitude ||
-    a.longitude !== b.longitude ||
-    a.reminder?.radius !== b.reminder?.radius ||
-    (!a.reminder?.enabled && !!b.reminder?.enabled)
-  );
-}
-
-export function updateReminderState(id: string, changes: Partial<LocationReminder>) {
-  setState({
-    ...state,
-    places: state.places.map((p) =>
-      p.id === id && p.reminder ? { ...p, reminder: { ...p.reminder, ...changes } } : p,
-    ),
+    places: state.places.map((p) => (p.id === id ? { ...p, ...changes } : p)),
   });
 }
 
 export function deletePlace(id: string) {
   setState({ ...state, places: state.places.filter((p) => p.id !== id) });
-}
-
-export function isActiveReminder(place: Place): boolean {
-  return place.collectionId === REMINDERS_COLLECTION_ID && !!place.reminder?.enabled;
-}
-
-export function describeReminder(reminder: LocationReminder): string {
-  const when = reminder.trigger === 'arrive' ? 'Arriving' : 'Leaving';
-  const radius = reminder.radius >= 1000 ? `${reminder.radius / 1000} km` : `${reminder.radius} m`;
-  return `${when} · ${radius}`;
 }

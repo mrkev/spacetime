@@ -6,16 +6,18 @@ import { Section, Separator } from '../../components/Form';
 import { HeaderButton } from '../../components/HeaderButton';
 import { Icon, icons } from '../../components/Icon';
 import { useTheme } from '../../lib/theme';
+import { useLocationReminders } from '../../space/locationReminders';
 import { REMINDERS_COLLECTION_ID, useSpaceState } from '../../space/store';
 
 export default function CollectionsScreen() {
   const theme = useTheme();
   const { collections, places } = useSpaceState();
+  const reminderCount = useLocationReminders().length;
   const counts = useMemo(() => {
-    const map = new Map<string, number>();
+    const map = new Map<string, number>([[REMINDERS_COLLECTION_ID, reminderCount]]);
     for (const p of places) map.set(p.collectionId, (map.get(p.collectionId) ?? 0) + 1);
     return map;
-  }, [places]);
+  }, [places, reminderCount]);
 
   const reminders = collections.filter((c) => c.id === REMINDERS_COLLECTION_ID);
   const others = collections.filter((c) => c.id !== REMINDERS_COLLECTION_ID);
@@ -69,7 +71,7 @@ export default function CollectionsScreen() {
           ),
         }}
       />
-      <Section footer="Places in Reminders notify you when you arrive at or leave them.">
+      <Section footer="Reminders with a location, from any list in the Reminders app. Reminders notifies you when you arrive at or leave them.">
         {renderRows(reminders)}
       </Section>
       <Section title="My Maps">

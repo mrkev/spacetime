@@ -7,40 +7,38 @@ import { Icon, icons } from '../../../components/Icon';
 import { formatRelativeDay, formatTime } from '../../../lib/dates';
 import { useTheme, type Theme } from '../../../lib/theme';
 import {
-  REMINDERS_COLLECTION_ID,
-  describeReminder,
-  updatePlace,
-  useSpaceState,
-  type Place,
-} from '../../../space/store';
+  describeTrigger,
+  useLocationReminders,
+  type LocationReminder,
+} from '../../../space/locationReminders';
+import { REMINDERS_COLLECTION_ID, useSpaceState } from '../../../space/store';
 import { useCalendar, type CalendarReminder } from '../../../time/CalendarProvider';
 import { useTimeActions } from '../../../time/actions';
 
 type Row =
-  | { kind: 'place'; key: string; place: Place }
+  | { kind: 'place'; key: string; location: LocationReminder }
   | { kind: 'reminder'; key: string; reminder: CalendarReminder };
 
 export default function RemindersScreen() {
   const theme = useTheme();
   const { openReminders, toggleReminder, remindersStatus, requestAccess } = useCalendar();
-  const { places, collections } = useSpaceState();
+  const { collections } = useSpaceState();
+  const locationReminders = useLocationReminders();
   const { showAddMenu } = useTimeActions();
   const placeColor = collections.find((c) => c.id === REMINDERS_COLLECTION_ID)?.color ?? theme.tint;
 
   const sections = useMemo(() => {
-    const placeRows: Row[] = places
-      .filter((p) => p.collectionId === REMINDERS_COLLECTION_ID && p.reminder)
-      // Active first, then most recent.
-      .sort(
-        (a, b) =>
-          Number(!!b.reminder?.enabled) - Number(!!a.reminder?.enabled) ||
-          b.createdAt - a.createdAt,
-      )
-      .map((place) => ({ kind: 'place', key: place.id, place }));
-    const scheduled: Row[] = openReminders
+    const placeRows: Row[] = locationReminders.map((location) => ({
+      kind: 'place',
+      key: location.id,
+      location,
+    }));
+    const located = new Set(locationReminders.map((l) => l.id));
+    const others = openReminders.filter((r) => !located.has(r.key));
+    const scheduled: Row[] = others
       .filter((r) => r.due)
       .map((reminder) => ({ kind: 'reminder', key: reminder.key, reminder }));
-    const unscheduled: Row[] = openReminders
+    const unscheduled: Row[] = others
       .filter((r) => !r.due)
       .map((reminder) => ({ kind: 'reminder', key: reminder.key, reminder }));
 
@@ -57,7 +55,7 @@ export default function RemindersScreen() {
           ]
         : []),
     ].filter((s) => s.data.length > 0 || s.empty);
-  }, [places, openReminders]);
+  }, [locationReminders, openReminders]);
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.groupedBackground }}>
@@ -109,7 +107,12 @@ export default function RemindersScreen() {
             ]}
           >
             {item.kind === 'place' ? (
-              <PlaceReminderRow place={item.place} color={placeColor} theme={theme} />
+              <PlaceReminderRow
+                location={item.location}
+                color={placeColor}
+                onToggle={toggleReminder}
+                theme={theme}
+              />
             ) : (
               <DatedReminderRow reminder={item.reminder} onToggle={toggleReminder} theme={theme} />
             )}
@@ -123,17 +126,26 @@ export default function RemindersScreen() {
   );
 }
 
-function PlaceReminderRow({ place, color, theme }: { place: Place; color: string; theme: Theme }) {
-  const reminder = place.reminder!;
-  const done = !reminder.enabled;
+function PlaceReminderRow({
+  location,
+  color,
+  onToggle,
+  theme,
+}: {
+  location: LocationReminder;
+  color: string;
+  onToggle: (reminder: CalendarReminder) => void;
+  theme: Theme;
+}) {
+  const done = location.completed;
   return (
     <Pressable
       style={styles.row}
-      onPress={() => router.push({ pathname: '/place/[id]', params: { id: place.id } })}
+      onPress={() => router.push({ pathname: '/place/reminder/[id]', params: { id: location.id } })}
     >
       <Pressable
         hitSlop={10}
-        onPress={() => updatePlace(place.id, { reminder: { ...reminder, enabled: done } })}
+        onPress={() => onToggle(location.reminder)}
         accessibilityRole="checkbox"
         accessibilityState={{ checked: done }}
       >
@@ -141,12 +153,12 @@ function PlaceReminderRow({ place, color, theme }: { place: Place; color: string
       </Pressable>
       <View style={styles.rowText}>
         <Text style={[styles.title, { color: theme.text }, done && styles.done]} numberOfLines={2}>
-          {reminder.title || place.name}
+          {location.title}
         </Text>
         <View style={styles.metaRow}>
           <Icon name={icons.locationFill} color={theme.secondaryText} size={11} />
           <Text style={[styles.meta, { color: theme.secondaryText }]} numberOfLines={1}>
-            {place.name} · {describeReminder(reminder)}
+            {location.placeName} · {describeTrigger(location)}
           </Text>
         </View>
       </View>

@@ -20,6 +20,7 @@ import {
   startOfMonth,
   toDate,
 } from '../lib/dates';
+import { reconcileReminderMeta } from './reminderMeta';
 
 export type AccessStatus = 'loading' | 'undetermined' | 'granted' | 'denied';
 
@@ -41,6 +42,8 @@ export type CalendarEvent = {
 
 export type CalendarReminder = {
   key: string;
+  /** The server's ID, shared across devices (see `ReminderRef`). */
+  externalId?: string;
   title: string;
   due: Date | null;
   /** True when the reminder has a date but no time. */
@@ -69,6 +72,8 @@ type CalendarContextValue = {
   /** Incomplete reminders across all lists (iOS only). */
   openReminders: CalendarReminder[];
   reminderLists: Calendar.ExpoCalendar[];
+  /** The list new reminders go into by default. */
+  defaultReminderList: () => Calendar.ExpoCalendar | null;
   /** The calendar new events go into by default. */
   defaultEventCalendar: () => Calendar.ExpoCalendar | null;
   /** A writable event calendar by ID. */
@@ -206,6 +211,7 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
       const due = toDate(r.dueDate ?? r.startDate);
       return {
         key: r.id,
+        externalId: r.externalId ?? undefined,
         title: r.title || 'Untitled',
         due,
         allDay: !!r.allDay,
@@ -390,6 +396,19 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
     );
   }, [eventCalendars]);
 
+  const defaultReminderList = useCallback(() => {
+    const writable = reminderLists.filter((l) => l.allowsModifications);
+    return writable.find((l) => l.isDefaultForReminders) ?? writable[0] ?? null;
+  }, [reminderLists]);
+
+  // Keep what we store about reminders matched up with them, and forget deleted ones.
+  useEffect(() => {
+    if (remindersStatus !== 'granted') return;
+    reconcileReminderMeta(
+      openReminders.map((r) => ({ id: r.key, externalId: r.externalId })),
+    ).catch((error) => console.warn('[calendar] reminder metadata failed', error));
+  }, [openReminders, remindersStatus]);
+
   const writableCalendar = useCallback(
     (id: string) => {
       const calendar = calendarsById.get(id);
@@ -417,6 +436,7 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
       getReminder,
       openReminders,
       reminderLists,
+      defaultReminderList,
       defaultEventCalendar,
       writableCalendar,
       toggleReminder,
@@ -432,6 +452,7 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
       getReminder,
       openReminders,
       reminderLists,
+      defaultReminderList,
       defaultEventCalendar,
       writableCalendar,
       toggleReminder,

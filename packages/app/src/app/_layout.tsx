@@ -1,27 +1,19 @@
-import * as Notifications from 'expo-notifications';
-import { DarkTheme, DefaultTheme, Stack, ThemeProvider, router } from 'expo-router';
+import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
-import { useEffect } from 'react';
 import { StyleSheet, useColorScheme } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { useTheme } from '../lib/theme';
-import { startGeofenceSync } from '../space/geofence';
+import { LegacyReminderMigration } from '../space/LegacyReminderMigration';
 import { CalendarProvider } from '../time/CalendarProvider';
 
-// Deep links into a modal (e.g. tapping a reminder notification) still get the tabs beneath them.
+// Deep links into a modal still get the tabs beneath them.
 export const unstable_settings = { anchor: '(tabs)' };
 
 export default function RootLayout() {
   const scheme = useColorScheme();
   const theme = useTheme();
   const navigationTheme = scheme === 'dark' ? DarkTheme : DefaultTheme;
-
-  useEffect(() => {
-    startGeofenceSync();
-  }, []);
-
-  useOpenPlaceFromNotification();
 
   return (
     <GestureHandlerRootView style={StyleSheet.absoluteFill}>
@@ -32,6 +24,7 @@ export default function RootLayout() {
         }}
       >
         <CalendarProvider>
+          <LegacyReminderMigration />
           <StatusBar style="auto" />
           <Stack
             screenOptions={{ headerTintColor: theme.tint, headerTitleStyle: { color: theme.text } }}
@@ -43,6 +36,10 @@ export default function RootLayout() {
               options={{ presentation: 'modal', title: 'New Place' }}
             />
             <Stack.Screen name="place/[id]" options={{ presentation: 'modal', title: '' }} />
+            <Stack.Screen
+              name="place/reminder/[id]"
+              options={{ presentation: 'modal', title: '' }}
+            />
             <Stack.Screen
               name="collections"
               options={{ presentation: 'modal', headerShown: false }}
@@ -61,15 +58,4 @@ export default function RootLayout() {
       </ThemeProvider>
     </GestureHandlerRootView>
   );
-}
-
-/** Tapping a location reminder notification opens that place. */
-function useOpenPlaceFromNotification() {
-  const response = Notifications.useLastNotificationResponse();
-  useEffect(() => {
-    const placeId = response?.notification.request.content.data?.placeId;
-    if (typeof placeId === 'string') {
-      router.push({ pathname: '/place/[id]', params: { id: placeId } });
-    }
-  }, [response]);
 }

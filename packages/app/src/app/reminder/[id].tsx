@@ -1,29 +1,15 @@
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useEffect, useState } from 'react';
-import {
-  ActionSheetIOS,
-  Alert,
-  Linking,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActionSheetIOS, Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { HeaderButton } from '../../components/HeaderButton';
 import { Icon, icons } from '../../components/Icon';
 import { formatFullDate, formatTime } from '../../lib/dates';
 import { useTheme, type Theme } from '../../lib/theme';
-import { useCalendar, type CalendarReminder } from '../../time/CalendarProvider';
+import { describeTrigger, toLocationReminder } from '../../space/locationReminders';
+import { useCalendar } from '../../time/CalendarProvider';
 import { MiniTimeline } from '../../time/MiniTimeline';
-
-/** Opens the reminder in the Reminders app (an undocumented URL), or just the app if that fails. */
-function showInReminders(reminder: CalendarReminder) {
-  Linking.openURL(`x-apple-reminderkit://REMCDReminder/${reminder.key}`).catch(() =>
-    Linking.openURL('x-apple-reminderkit://').catch(() => {}),
-  );
-}
+import { showInReminders } from '../../time/actions';
 
 /** A reminder's details, like the card Calendar shows for one. */
 export default function ReminderDetailsScreen() {
@@ -52,6 +38,8 @@ export default function ReminderDetailsScreen() {
       </View>
     );
   }
+
+  const location = toLocationReminder(reminder);
 
   const toggle = () => {
     setCompleted(!isCompleted);
@@ -105,7 +93,11 @@ export default function ReminderDetailsScreen() {
               label="Edit"
               color={theme.text}
               onPress={() =>
-                router.push({ pathname: '/reminder/edit', params: { id: reminder.key } })
+                // Location reminders are edited like places, with their map and radius.
+                router.push({
+                  pathname: location ? '/place/reminder/[id]' : '/reminder/edit',
+                  params: { id: reminder.key },
+                })
               }
             />
           ),
@@ -147,6 +139,13 @@ export default function ReminderDetailsScreen() {
         </View>
       ) : null}
 
+      {location ? (
+        <Detail
+          label="Location"
+          value={`${location.placeName}\n${describeTrigger(location)}`}
+          theme={theme}
+        />
+      ) : null}
       <Detail label="List" value={reminder.listTitle} theme={theme} />
       {reminder.notes ? <Detail label="Notes" value={reminder.notes} theme={theme} /> : null}
 
@@ -157,7 +156,7 @@ export default function ReminderDetailsScreen() {
       <View style={styles.buttons}>
         <WideButton
           label="Show in Reminders"
-          onPress={() => showInReminders(reminder)}
+          onPress={() => showInReminders(reminder.key)}
           theme={theme}
         />
         <WideButton label="Delete Reminder" destructive onPress={remove} theme={theme} />

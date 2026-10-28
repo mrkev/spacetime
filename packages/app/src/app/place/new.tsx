@@ -1,15 +1,11 @@
 import { Stack, router, useLocalSearchParams } from 'expo-router';
+import { useState } from 'react';
 import { ScrollView } from 'react-native';
 
 import { HeaderButton } from '../../components/HeaderButton';
 import { useTheme } from '../../lib/theme';
-import {
-  PlaceFormFields,
-  ensureReminderPermissions,
-  toPlaceInput,
-  usePlaceForm,
-} from '../../space/PlaceForm';
-import { REMINDERS_COLLECTION_ID, addPlace, useSpaceState } from '../../space/store';
+import { PlaceFormFields, usePlaceForm, useSavePlaceForm } from '../../space/PlaceForm';
+import { REMINDERS_COLLECTION_ID, useSpaceState } from '../../space/store';
 
 type Params = {
   latitude?: string;
@@ -39,11 +35,13 @@ export default function NewPlaceScreen() {
     collectionId: defaultCollection.id,
   });
 
+  const savePlaceForm = useSavePlaceForm();
+  const [saving, setSaving] = useState(false);
   const save = async () => {
-    if (!form.canSave) return;
-    addPlace(toPlaceInput(form.state));
-    router.back();
-    if (form.isReminder) await ensureReminderPermissions();
+    if (!form.canSave || saving) return;
+    setSaving(true);
+    if (await savePlaceForm(form.state)) router.back();
+    else setSaving(false);
   };
 
   return (
@@ -59,7 +57,7 @@ export default function NewPlaceScreen() {
           title: form.isReminder ? 'New Reminder' : 'New Place',
           headerLeft: () => <HeaderButton label="Cancel" onPress={() => router.back()} />,
           headerRight: () => (
-            <HeaderButton label="Save" bold disabled={!form.canSave} onPress={save} />
+            <HeaderButton label="Save" bold disabled={!form.canSave || saving} onPress={save} />
           ),
         }}
       />

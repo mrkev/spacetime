@@ -1,23 +1,27 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
 import MapView, { Circle, Marker } from 'react-native-maps';
 
-import { Field, Section, Segmented, Separator, SwitchRow } from '../components/Form';
+import { Field, Section, Segmented, Separator } from '../components/Form';
 import { Icon, icons } from '../components/Icon';
 import { describeCoordinate, searchAddress, type Coordinate } from '../lib/geo';
 import { useTheme, withAlpha } from '../lib/theme';
+import { useCalendar } from '../time/CalendarProvider';
 import {
-  openSettings,
-  permissionMessages,
-  requestReminderPermissions,
-  syncGeofences,
-} from './geofence';
+  createLocationReminder,
+  updateLocationReminder,
+  type LocationReminder,
+  type LocationReminderInput,
+  type ReminderTrigger,
+} from './locationReminders';
 import {
   REMINDERS_COLLECTION_ID,
+  addPlace,
+  deletePlace,
+  updatePlace,
   type Collection,
-  type LocationReminder,
+  type Place,
   type PlaceInput,
-  type ReminderTrigger,
 } from './store';
 
 export const RADIUS_OPTIONS = [
@@ -27,13 +31,10 @@ export const RADIUS_OPTIONS = [
   { label: '1 km', value: 1000 },
 ];
 
-const DEFAULT_REMINDER: LocationReminder = {
-  title: '',
-  trigger: 'arrive',
-  radius: 250,
-  repeat: false,
-  enabled: true,
-};
+/** The fields only location reminders have. */
+export type ReminderFields = { title: string; trigger: ReminderTrigger; radius: number };
+
+const DEFAULT_REMINDER: ReminderFields = { title: '', trigger: 'arrive', radius: 250 };
 
 export type PlaceFormState = {
   coordinate: Coordinate | null;
@@ -41,10 +42,11 @@ export type PlaceFormState = {
   address: string;
   notes: string;
   collectionId: string;
-  reminder: LocationReminder;
+  reminder: ReminderFields;
 };
 
 export function usePlaceForm(initial: Partial<PlaceFormState> & { collectionId: string }) {
+  const { remindersStatus, requestAccess } = useCalendar();
   const [state, setState] = useState<PlaceFormState>({
     coordinate: null,
     name: '',
@@ -54,10 +56,14 @@ export function usePlaceForm(initial: Partial<PlaceFormState> & { collectionId: 
     reminder: { ...DEFAULT_REMINDER, ...initial.reminder },
   });
   const update = (changes: Partial<PlaceFormState>) => setState((s) => ({ ...s, ...changes }));
-  const updateReminder = (changes: Partial<LocationReminder>) =>
+  const updateReminder = (changes: Partial<ReminderFields>) =>
     setState((s) => ({ ...s, reminder: { ...s.reminder, ...changes } }));
 
   const isReminder = state.collectionId === REMINDERS_COLLECTION_ID;
+  // Location reminders are saved in Reminders, so ask for access as soon as one is being made.
+  useEffect(() => {
+    if (isReminder && remindersStatus === 'undetermined') requestAccess();
+  }, [isReminder, remindersStatus, requestAccess]);
   const canSave =
     !!state.coordinate &&
     (isReminder ? !!(state.reminder.title.trim() || state.name.trim()) : !!state.name.trim());
@@ -67,34 +73,89 @@ export function usePlaceForm(initial: Partial<PlaceFormState> & { collectionId: 
 
 export type PlaceForm = ReturnType<typeof usePlaceForm>;
 
-/** Converts form state to a place, filling in a name for reminders saved without one. */
-export function toPlaceInput(state: PlaceFormState): PlaceInput {
-  const isReminder = state.collectionId === REMINDERS_COLLECTION_ID;
+function placeName(state: PlaceFormState) {
+  return state.name.trim() || 'Dropped Pin';
+}
+
+function toPlaceInput(state: PlaceFormState): PlaceInput {
   return {
     collectionId: state.collectionId,
-    name: state.name.trim() || 'Dropped Pin',
+    name: placeName(state),
     address: state.address || undefined,
     notes: state.notes.trim() || undefined,
     latitude: state.coordinate!.latitude,
     longitude: state.coordinate!.longitude,
-    reminder: isReminder ? { ...state.reminder, title: state.reminder.title.trim() } : undefined,
   };
 }
 
+/** A reminder saved without a title is titled after its place, like in Reminders. */
+function toLocationReminderInput(state: PlaceFormState): LocationReminderInput {
+  return {
+    title: state.reminder.title.trim() || placeName(state),
+    placeName: placeName(state),
+    address: state.address || undefined,
+    notes: state.notes.trim() || undefined,
+    latitude: state.coordinate!.latitude,
+    longitude: state.coordinate!.longitude,
+    trigger: state.reminder.trigger,
+    radius: state.reminder.radius,
+  };
+}
+
+/** What the form is editing: a saved place, a location reminder, or (if neither) something new. */
+export type PlaceFormOriginal =
+  { kind: 'place'; place: Place } | { kind: 'reminder'; reminder: LocationReminder };
+
 /**
- * Makes sure a location reminder can actually fire, explaining what's missing if not.
- * The reminder is saved either way; it starts working once permissions are granted.
+ * Saves the form as a place or, in the Reminders collection, a location reminder, moving it from
+ * one to the other if its collection changed. Resolves false if it couldn't be saved.
  */
-export async function ensureReminderPermissions() {
-  const result = await requestReminderPermissions();
-  if (result.ok) {
-    await syncGeofences();
-    return;
-  }
-  Alert.alert('Reminder Saved', permissionMessages[result.reason], [
-    { text: 'Not Now', style: 'cancel' },
-    { text: 'Open Settings', onPress: openSettings },
-  ]);
+export function useSavePlaceForm() {
+  const { remindersStatus, defaultReminderList, refresh } = useCalendar();
+
+  return async (state: PlaceFormState, original?: PlaceFormOriginal): Promise<boolean> => {
+    try {
+      if (state.collectionId !== REMINDERS_COLLECTION_ID) {
+        const input = toPlaceInput(state);
+        if (original?.kind === 'place') updatePlace(original.place.id, input);
+        else addPlace(input);
+        if (original?.kind === 'reminder') {
+          await original.reminder.reminder.source.delete();
+          refresh();
+        }
+        return true;
+      }
+
+      const input = toLocationReminderInput(state);
+      if (original?.kind === 'reminder') {
+        await updateLocationReminder(original.reminder, input);
+      } else {
+        const list = defaultReminderList();
+        if (!list) {
+          Alert.alert(
+            'Can’t Save Reminder',
+            remindersStatus === 'granted'
+              ? 'Add a list in Reminders to save location reminders.'
+              : 'Location reminders are saved in Reminders. Allow access to Reminders in Settings.',
+            remindersStatus === 'granted'
+              ? undefined
+              : [
+                  { text: 'Not Now', style: 'cancel' },
+                  { text: 'Open Settings', onPress: () => Linking.openSettings() },
+                ],
+          );
+          return false;
+        }
+        await createLocationReminder(list, input);
+        if (original?.kind === 'place') deletePlace(original.place.id);
+      }
+      refresh();
+      return true;
+    } catch (error) {
+      Alert.alert('Couldn’t Save', String(error));
+      return false;
+    }
+  };
 }
 
 export function PlaceFormFields({
@@ -259,11 +320,9 @@ export function PlaceFormFields({
       {isReminder ? (
         <Section
           title="Remind Me"
-          footer={
-            state.reminder.repeat
-              ? 'You’ll be notified every time.'
-              : 'The reminder completes after it notifies you once.'
-          }
+          footer={`Saved in Reminders, which notifies you when you ${
+            state.reminder.trigger === 'arrive' ? 'arrive' : 'leave'
+          }.`}
         >
           <Segmented<ReminderTrigger>
             options={[
@@ -278,12 +337,6 @@ export function PlaceFormFields({
             options={RADIUS_OPTIONS}
             value={state.reminder.radius}
             onChange={(radius) => updateReminder({ radius })}
-          />
-          <Separator />
-          <SwitchRow
-            label="Repeat"
-            value={state.reminder.repeat}
-            onValueChange={(repeat) => updateReminder({ repeat })}
           />
         </Section>
       ) : null}

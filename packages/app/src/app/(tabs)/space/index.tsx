@@ -19,12 +19,8 @@ import { Icon, icons } from '../../../components/Icon';
 import { describeCoordinate, searchAddress, type Coordinate } from '../../../lib/geo';
 import { useNowAction } from '../../../lib/nowAction';
 import { useTheme, withAlpha, type Theme } from '../../../lib/theme';
-import {
-  REMINDERS_COLLECTION_ID,
-  isActiveReminder,
-  useSpaceState,
-  type Collection,
-} from '../../../space/store';
+import { useLocationReminders } from '../../../space/locationReminders';
+import { REMINDERS_COLLECTION_ID, useSpaceState, type Collection } from '../../../space/store';
 
 const ALL = 'all';
 const REGION_KEY = 'spacetime.space.region.v1';
@@ -51,6 +47,7 @@ export default function SpaceScreen() {
   const insets = useSafeAreaInsets();
   const mapRef = useRef<MapView>(null);
   const { collections, places } = useSpaceState();
+  const reminders = useLocationReminders();
 
   const [filter, setFilter] = useState<string>(ALL);
   const [query, setQuery] = useState('');
@@ -67,14 +64,18 @@ export default function SpaceScreen() {
     [collections],
   );
   const counts = useMemo(() => {
-    const map = new Map<string, number>();
+    const map = new Map<string, number>([[REMINDERS_COLLECTION_ID, reminders.length]]);
     for (const p of places) map.set(p.collectionId, (map.get(p.collectionId) ?? 0) + 1);
     return map;
-  }, [places]);
+  }, [places, reminders]);
   const visiblePlaces = useMemo(
     () => (filter === ALL ? places : places.filter((p) => p.collectionId === filter)),
     [places, filter],
   );
+  const showReminders = filter === ALL || filter === REMINDERS_COLLECTION_ID;
+  const visibleReminders = showReminders ? reminders : [];
+  const total = places.length + reminders.length;
+  const reminderColor = collectionsById.get(REMINDERS_COLLECTION_ID)?.color ?? theme.tint;
 
   // Find the user once we have permission.
   useEffect(() => {
@@ -111,7 +112,12 @@ export default function SpaceScreen() {
 
   const selectFilter = (id: string) => {
     setFilter(id);
-    focusOn((id === ALL ? places : places.filter((p) => p.collectionId === id)).map(toCoordinate));
+    focusOn(
+      [
+        ...(id === ALL ? places : places.filter((p) => p.collectionId === id)),
+        ...(id === ALL || id === REMINDERS_COLLECTION_ID ? reminders : []),
+      ].map(toCoordinate),
+    );
   };
 
   const goToMyLocation = async () => {
@@ -182,26 +188,35 @@ export default function SpaceScreen() {
               coordinate={toCoordinate(place)}
               pinColor={color}
               title={place.name}
-              description={place.reminder?.title || collection?.name}
+              description={collection?.name}
               onCalloutPress={() =>
                 router.push({ pathname: '/place/[id]', params: { id: place.id } })
               }
             />
           );
         })}
-        {visiblePlaces.filter(isActiveReminder).map((place) => {
-          const color = collectionsById.get(REMINDERS_COLLECTION_ID)?.color ?? theme.tint;
-          return (
-            <Circle
-              key={`radius:${place.id}:${color}:${place.reminder?.radius}`}
-              center={toCoordinate(place)}
-              radius={place.reminder?.radius ?? 200}
-              strokeColor={withAlpha(color, 0.8)}
-              fillColor={withAlpha(color, 0.15)}
-              strokeWidth={1.5}
-            />
-          );
-        })}
+        {visibleReminders.map((reminder) => (
+          <Marker
+            key={`reminder:${reminder.id}:${reminderColor}`}
+            coordinate={toCoordinate(reminder)}
+            pinColor={reminderColor}
+            title={reminder.title}
+            description={reminder.placeName}
+            onCalloutPress={() =>
+              router.push({ pathname: '/place/reminder/[id]', params: { id: reminder.id } })
+            }
+          />
+        ))}
+        {visibleReminders.map((reminder) => (
+          <Circle
+            key={`radius:${reminder.id}:${reminderColor}:${reminder.radius}`}
+            center={toCoordinate(reminder)}
+            radius={reminder.radius}
+            strokeColor={withAlpha(reminderColor, 0.8)}
+            fillColor={withAlpha(reminderColor, 0.15)}
+            strokeWidth={1.5}
+          />
+        ))}
         {result ? (
           <Marker
             coordinate={toCoordinate(result)}
@@ -250,7 +265,7 @@ export default function SpaceScreen() {
         >
           <Chip
             label="All"
-            count={places.length}
+            count={total}
             selected={filter === ALL}
             onPress={() => selectFilter(ALL)}
             theme={theme}
@@ -305,9 +320,9 @@ export default function SpaceScreen() {
           pointerEvents="none"
         >
           <Text style={[styles.hintText, { color: theme.secondaryText }]}>
-            {places.length === 0
+            {total === 0
               ? 'Long-press the map to save a place'
-              : `${visiblePlaces.length} places`}
+              : `${visiblePlaces.length + visibleReminders.length} places`}
           </Text>
         </View>
       )}

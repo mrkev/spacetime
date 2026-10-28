@@ -1,5 +1,46 @@
+diff --git a/build/ExpoCalendar.types.d.ts b/build/ExpoCalendar.types.d.ts
+index d5be503beb9eb567965180e305d84d6d18bdf369..f5a7e5f02694705268d863e57e24d9d90f5c4ae0 100644
+--- a/build/ExpoCalendar.types.d.ts
++++ b/build/ExpoCalendar.types.d.ts
+@@ -33,6 +33,11 @@ export declare class ExpoCalendar {
+      * Visible name of the calendar.
+      */
+     title: string;
++    /**
++     * Whether new reminders go into this list by default.
++     * @platform ios
++     */
++    isDefaultForReminders?: boolean;
+     /**
+      * ID of the source to be used for the calendar. Likely the same as the source for any other
+      * locally stored calendars.
+@@ -345,6 +350,10 @@ export declare class ExpoCalendarReminder {
+      * Internal ID that represents this reminder on the device.
+      */
+     id?: string;
++    /**
++     * The server's ID for this reminder, shared across devices.
++     */
++    externalId?: string | null;
+     /**
+      * ID of the calendar that contains this reminder.
+      */
+diff --git a/ios/Conversions/Conversions.swift b/ios/Conversions/Conversions.swift
+index 28204cfc70e6448e750aee6475338f673aefc86f..6ef27fc4f9d8d885c2e4602af6e280c155187088 100644
+--- a/ios/Conversions/Conversions.swift
++++ b/ios/Conversions/Conversions.swift
+@@ -250,7 +250,8 @@ func serialize(alarms: [EKAlarm], with formatter: DateFormatter) -> [[String: An
+         "title": structuredLocation.title,
+         "proximity": proximity,
+         "radius": structuredLocation.radius,
+-        "coord": [
++        // `coords`, matching the key alarms are created with, so alarms can be passed back as-is.
++        "coords": [
+           "latitude": structuredLocation.geoLocation?.coordinate.latitude,
+           "longitude": structuredLocation.geoLocation?.coordinate.longitude
+         ]
 diff --git a/ios/Dialogs/ViewEventViewController.swift b/ios/Dialogs/ViewEventViewController.swift
-index 775db49..d3ec089 100644
+index 775db49c2346574752c0af4b3b3e25d98cc2741a..d3ec089e77ff1b1bd7349911ed3c3cb2572bf514 100644
 --- a/ios/Dialogs/ViewEventViewController.swift
 +++ b/ios/Dialogs/ViewEventViewController.swift
 @@ -21,6 +21,17 @@ class ViewEventViewController: UINavigationController, UIAdaptivePresentationCon
@@ -20,3 +61,35 @@ index 775db49..d3ec089 100644
    func presentationControllerDidDismiss(_ presentationController: UIPresentationController) {
      onDismiss()
      promise.resolve(DialogViewResponse(action: .canceled))
+diff --git a/ios/Next/CalendarNextModule.swift b/ios/Next/CalendarNextModule.swift
+index 656705d13213cfbeb88c8263beb08b7ec4ddd2fe..760362e7bb75066f894d4ee610c3aeef73912688 100644
+--- a/ios/Next/CalendarNextModule.swift
++++ b/ios/Next/CalendarNextModule.swift
+@@ -249,6 +249,14 @@ public final class CalendarNextModule: Module {
+         return entity(type: calendar.allowedEntityTypes)
+       }
+ 
++      // Whether this is the list new reminders go into by default (the one set in Settings).
++      Property("isDefaultForReminders") { (expoCalendar: ExpoCalendar) -> Bool in
++        guard let calendar = expoCalendar.calendar else {
++          return false
++        }
++        return calendar.calendarIdentifier == eventStore.defaultCalendarForNewReminders()?.calendarIdentifier
++      }
++
+       Property("allowsModifications") { (expoCalendar: ExpoCalendar) -> Bool in
+         guard let calendar = expoCalendar.calendar else {
+           return false
+@@ -553,6 +561,12 @@ public final class CalendarNextModule: Module {
+         expoReminder.reminder?.calendarItemIdentifier
+       }
+ 
++      // The server's ID for the reminder: the same on every device, and it survives the full resyncs
++      // that can change `id`.
++      Property("externalId") { (expoReminder: ExpoCalendarReminder) in
++        expoReminder.reminder?.calendarItemExternalIdentifier
++      }
++
+       Property("calendarId") { (expoReminder: ExpoCalendarReminder) in
+         expoReminder.reminder?.calendar?.calendarIdentifier
+       }

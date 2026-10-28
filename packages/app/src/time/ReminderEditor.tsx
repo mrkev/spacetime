@@ -7,6 +7,7 @@ import { DateField } from '../components/DateField';
 import { Field, Row, Section, Separator, SwitchRow } from '../components/Form';
 import { HeaderButton } from '../components/HeaderButton';
 import { Icon, icons } from '../components/Icon';
+import { useKeyboardHeight } from '../lib/keyboard';
 import { useTheme } from '../lib/theme';
 import { useCalendar, type CalendarReminder } from './CalendarProvider';
 
@@ -19,7 +20,9 @@ type Props =
 /** Creates or edits a reminder in the system Reminders app. */
 export function ReminderEditor({ reminder, date }: Props) {
   const theme = useTheme();
-  const { reminderLists, remindersStatus, requestAccess, refresh } = useCalendar();
+  const { reminderLists, defaultReminderList, remindersStatus, requestAccess, refresh } =
+    useCalendar();
+  const keyboardHeight = useKeyboardHeight();
 
   const [title, setTitle] = useState(reminder?.title ?? '');
   const [notes, setNotes] = useState(reminder?.notes ?? '');
@@ -39,7 +42,7 @@ export function ReminderEditor({ reminder, date }: Props) {
   }, [remindersStatus, requestAccess]);
 
   const writableLists = reminderLists.filter((l) => l.allowsModifications);
-  const list = writableLists.find((l) => l.id === listId) ?? writableLists[0];
+  const list = writableLists.find((l) => l.id === listId) ?? defaultReminderList();
 
   const save = async () => {
     if (!title.trim() || (!reminder && !list)) return;
@@ -103,8 +106,7 @@ export function ReminderEditor({ reminder, date }: Props) {
     return (
       <View style={[styles.center, { backgroundColor: theme.groupedBackground }]}>
         <Text style={{ color: theme.secondaryText, textAlign: 'center' }}>
-          Dated reminders use Apple Reminders and are only available on iOS. Location reminders work
-          everywhere — add one from the Space tab.
+          Reminders use Apple Reminders and are only available on iOS.
         </Text>
       </View>
     );
@@ -115,7 +117,10 @@ export function ReminderEditor({ reminder, date }: Props) {
       contentInsetAdjustmentBehavior="automatic"
       style={{ backgroundColor: theme.groupedBackground }}
       keyboardShouldPersistTaps="handled"
-      contentContainerStyle={styles.content}
+      keyboardDismissMode="interactive"
+      // Room to scroll the list picker at the bottom up from under the keyboard. (RN's
+      // automaticallyAdjustKeyboardInsets does this too, but scrolls the form up under its header.)
+      contentContainerStyle={[styles.content, { paddingBottom: 40 + keyboardHeight }]}
     >
       <Stack.Screen
         options={{
