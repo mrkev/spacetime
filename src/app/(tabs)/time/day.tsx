@@ -38,6 +38,7 @@ import {
   nowOffset,
 } from '../../../time/DayPage';
 import { useTimeActions } from '../../../time/actions';
+import { useRememberTimeLevel } from '../../../time/timeLevel';
 
 const DAYS_EACH_WAY = 730;
 const WEEK_STARTS_ON = 0;
@@ -125,6 +126,8 @@ export default function DayScreen() {
     },
     [indexForDay, indexForWeek, dayIndices.length],
   );
+
+  useRememberTimeLevel('day');
 
   // Today: go to today's page and bring the current-time indicator into view. Pages that mount on
   // the way start there; today's page, if already showing, scrolls to it (`scrollToNow`).
