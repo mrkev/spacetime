@@ -1,5 +1,5 @@
 import { Stack, router } from 'expo-router';
-import { memo, useCallback, useMemo, useRef } from 'react';
+import { memo, useRef, useState } from 'react';
 import { FlatList, Pressable, StyleSheet, Text, View, useWindowDimensions } from 'react-native';
 
 import { HeaderButton } from '../../../components/HeaderButton';
@@ -28,13 +28,13 @@ export default function YearScreen() {
   const { width } = useWindowDimensions();
   const { showAddMenu } = useTimeActions();
   const listRef = useRef<FlatList<number>>(null);
-  const today = useMemo(() => new Date(), []);
+  const [today] = useState(() => new Date());
 
   // Each item is a year's offset from this one. The year view only opens from a tap, with the tab
   // on screen, so it can start scrolled to this year directly.
-  const offsets = useMemo(
-    () => Array.from({ length: YEARS_BEFORE + YEARS_AFTER + 1 }, (_, i) => i - YEARS_BEFORE),
-    [],
+  const offsets = Array.from(
+    { length: YEARS_BEFORE + YEARS_AFTER + 1 },
+    (_, i) => i - YEARS_BEFORE,
   );
 
   useRememberTimeLevel('year');
@@ -43,14 +43,15 @@ export default function YearScreen() {
     listRef.current?.scrollToIndex({ index: YEARS_BEFORE, animated: true }),
   );
 
-  const openMonth = useCallback((month: Date) => {
+  const openMonth = (month: Date) => {
     router.push({ pathname: '/time', params: { month: monthKey(month) } });
-  }, []);
+  };
 
-  const getItemLayout = useCallback(
-    (_: unknown, index: number) => ({ index, length: YEAR_HEIGHT, offset: index * YEAR_HEIGHT }),
-    [],
-  );
+  const getItemLayout = (_: unknown, index: number) => ({
+    index,
+    length: YEAR_HEIGHT,
+    offset: index * YEAR_HEIGHT,
+  });
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>

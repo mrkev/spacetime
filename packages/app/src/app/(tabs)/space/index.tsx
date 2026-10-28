@@ -1,7 +1,7 @@
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import Storage from 'expo-sqlite/kv-store';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   Keyboard,
@@ -59,19 +59,10 @@ export default function SpaceScreen() {
   const [userRegion, setUserRegion] = useState<Region | null>(null);
   const centeredOnUser = useRef(false);
 
-  const collectionsById = useMemo(
-    () => new Map(collections.map((c) => [c.id, c] as const)),
-    [collections],
-  );
-  const counts = useMemo(() => {
-    const map = new Map<string, number>([[REMINDERS_COLLECTION_ID, reminders.length]]);
-    for (const p of places) map.set(p.collectionId, (map.get(p.collectionId) ?? 0) + 1);
-    return map;
-  }, [places, reminders]);
-  const visiblePlaces = useMemo(
-    () => (filter === ALL ? places : places.filter((p) => p.collectionId === filter)),
-    [places, filter],
-  );
+  const collectionsById = new Map(collections.map((c) => [c.id, c] as const));
+  const counts = new Map<string, number>([[REMINDERS_COLLECTION_ID, reminders.length]]);
+  for (const p of places) counts.set(p.collectionId, (counts.get(p.collectionId) ?? 0) + 1);
+  const visiblePlaces = filter === ALL ? places : places.filter((p) => p.collectionId === filter);
   const showReminders = filter === ALL || filter === REMINDERS_COLLECTION_ID;
   const visibleReminders = showReminders ? reminders : [];
   const total = places.length + reminders.length;

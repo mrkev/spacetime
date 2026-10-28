@@ -120,6 +120,44 @@ type TimelineEntry =
   | (TimedItem & { kind: 'event'; event: CalendarEvent })
   | (TimedItem & { kind: 'reminder'; reminder: CalendarReminder });
 
+/** Sorts a day's items into the all-day area and the laid-out timeline. */
+function splitDay(items: DayItems | undefined, date: Date, hourHeight: number) {
+  const dayStart = startOfDay(date);
+  const dayEnd = addDays(dayStart, 1);
+  const allDayEvents: CalendarEvent[] = [];
+  const allDayReminders: CalendarReminder[] = [];
+  const timed: TimelineEntry[] = [];
+
+  for (const event of items?.events ?? []) {
+    // Events spanning the whole day (or flagged all-day) go in the all-day area.
+    if (event.allDay || (event.start <= dayStart && event.end >= dayEnd)) {
+      allDayEvents.push(event);
+      continue;
+    }
+    const startMinute = event.start < dayStart ? 0 : minutesIntoDay(event.start);
+    const endMinute = event.end >= dayEnd ? 24 * 60 : minutesIntoDay(event.end);
+    timed.push({ kind: 'event', key: event.key, event, startMinute, endMinute });
+  }
+  for (const reminder of items?.reminders ?? []) {
+    if (reminder.allDay || !reminder.due) {
+      allDayReminders.push(reminder);
+      continue;
+    }
+    // The time the block covers at this zoom, so overlaps are laid out side by side.
+    const startMinute = minutesIntoDay(reminder.due);
+    timed.push({
+      kind: 'reminder',
+      key: reminder.key,
+      reminder,
+      startMinute,
+      endMinute: startMinute + ((REMINDER_HEIGHT + 2) / hourHeight) * 60,
+    });
+  }
+  // Short blocks are drawn at a minimum height in points, so lay them out with the same room.
+  const minMinutes = ((MIN_BLOCK_HEIGHT + 2) / hourHeight) * 60;
+  return { allDayEvents, allDayReminders, timed: layoutDay(timed, minMinutes) };
+}
+
 export const DayPage = memo(function DayPage({
   date,
   width,
@@ -149,42 +187,12 @@ export const DayPage = memo(function DayPage({
     ensureMonths(date, 0);
   }, [date, ensureMonths]);
 
-  const { allDayEvents, allDayReminders, timed } = useMemo(() => {
-    const dayStart = startOfDay(date);
-    const dayEnd = addDays(dayStart, 1);
-    const allDayEvents: CalendarEvent[] = [];
-    const allDayReminders: CalendarReminder[] = [];
-    const timed: TimelineEntry[] = [];
-
-    for (const event of items?.events ?? []) {
-      // Events spanning the whole day (or flagged all-day) go in the all-day area.
-      if (event.allDay || (event.start <= dayStart && event.end >= dayEnd)) {
-        allDayEvents.push(event);
-        continue;
-      }
-      const startMinute = event.start < dayStart ? 0 : minutesIntoDay(event.start);
-      const endMinute = event.end >= dayEnd ? 24 * 60 : minutesIntoDay(event.end);
-      timed.push({ kind: 'event', key: event.key, event, startMinute, endMinute });
-    }
-    for (const reminder of items?.reminders ?? []) {
-      if (reminder.allDay || !reminder.due) {
-        allDayReminders.push(reminder);
-        continue;
-      }
-      // The time the block covers at this zoom, so overlaps are laid out side by side.
-      const startMinute = minutesIntoDay(reminder.due);
-      timed.push({
-        kind: 'reminder',
-        key: reminder.key,
-        reminder,
-        startMinute,
-        endMinute: startMinute + ((REMINDER_HEIGHT + 2) / hourHeight) * 60,
-      });
-    }
-    // Short blocks are drawn at a minimum height in points, so lay them out with the same room.
-    const minMinutes = ((MIN_BLOCK_HEIGHT + 2) / hourHeight) * 60;
-    return { allDayEvents, allDayReminders, timed: layoutDay(timed, minMinutes) };
-  }, [items, date, hourHeight]);
+  // React Compiler would memoize this anyway, but without the explicit memo its lint mistakes the
+  // drag handlers passed into `timed.map` for code that runs during render.
+  const { allDayEvents, allDayReminders, timed } = useMemo(
+    () => splitDay(items, date, hourHeight),
+    [items, date, hourHeight],
+  );
 
   const today = isToday(date);
   // Captured once so re-renders don't fight the user's scrolling.
@@ -529,13 +537,7 @@ function blockFrame(range: MinuteRange, hourHeight: number) {
   };
 }
 
-const HourGrid = memo(function HourGrid({
-  theme,
-  hourHeight,
-}: {
-  theme: Theme;
-  hourHeight: number;
-}) {
+function HourGrid({ theme, hourHeight }: { theme: Theme; hourHeight: number }) {
   return (
     <>
       {Array.from({ length: 25 }, (_, hour) => {
@@ -553,7 +555,7 @@ const HourGrid = memo(function HourGrid({
       })}
     </>
   );
-});
+}
 
 function ReminderBlock({
   entry,

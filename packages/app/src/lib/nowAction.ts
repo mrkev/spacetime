@@ -1,5 +1,5 @@
 import { useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useRef } from 'react';
+import { useEffect, useRef } from 'react';
 
 export type TabName = 'space' | 'time';
 
@@ -19,13 +19,11 @@ export function useNowAction(tab: TabName, action: () => void) {
   useEffect(() => {
     latest.current = action;
   });
-  useFocusEffect(
-    useCallback(() => {
-      const run = () => latest.current();
-      handlers.set(tab, run);
-      return () => {
-        if (handlers.get(tab) === run) handlers.delete(tab);
-      };
-    }, [tab]),
-  );
+  useFocusEffect(() => {
+    const run = () => latest.current();
+    handlers.set(tab, run);
+    return () => {
+      if (handlers.get(tab) === run) handlers.delete(tab);
+    };
+  });
 }

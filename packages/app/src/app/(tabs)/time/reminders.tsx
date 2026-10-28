@@ -1,5 +1,4 @@
 import { Stack, router } from 'expo-router';
-import { useMemo } from 'react';
 import { Platform, Pressable, SectionList, StyleSheet, Text, View } from 'react-native';
 
 import { HeaderButton } from '../../../components/HeaderButton';
@@ -27,7 +26,7 @@ export default function RemindersScreen() {
   const { showAddMenu } = useTimeActions();
   const placeColor = collections.find((c) => c.id === REMINDERS_COLLECTION_ID)?.color ?? theme.tint;
 
-  const sections = useMemo(() => {
+  const sections = (() => {
     const placeRows: Row[] = locationReminders.map((location) => ({
       kind: 'place',
       key: location.id,
@@ -55,7 +54,7 @@ export default function RemindersScreen() {
           ]
         : []),
     ].filter((s) => s.data.length > 0 || s.empty);
-  }, [locationReminders, openReminders]);
+  })();
 
   return (
     <View style={{ flex: 1, backgroundColor: theme.groupedBackground }}>

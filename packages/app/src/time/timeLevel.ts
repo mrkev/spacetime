@@ -1,6 +1,5 @@
 import { router, useFocusEffect } from 'expo-router';
 import Storage from 'expo-sqlite/kv-store';
-import { useCallback } from 'react';
 
 import { dayKey } from '../lib/dates';
 
@@ -20,11 +19,9 @@ function lastLevel(): TimeLevel {
 
 /** Records `level` as where to reopen the Time tab while this screen is focused. */
 export function useRememberTimeLevel(level: TimeLevel) {
-  useFocusEffect(
-    useCallback(() => {
-      Storage.setItemSync(LEVEL_KEY, level);
-    }, [level]),
-  );
+  useFocusEffect(() => {
+    Storage.setItemSync(LEVEL_KEY, level);
+  });
 }
 
 let opened = false;

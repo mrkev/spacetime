@@ -1,5 +1,5 @@
 import { Stack, router, useFocusEffect, useLocalSearchParams, useNavigation } from 'expo-router';
-import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import {
   FlatList,
   Pressable,
@@ -55,18 +55,15 @@ export default function MonthScreen() {
   const navigation = useNavigation();
   const isRoot = navigation.getState()?.routes[0]?.name === 'index';
 
-  const today = useMemo(() => new Date(), []);
-  const baseMonth = useMemo(
-    () => parseMonthKey(params.month) ?? startOfMonth(today),
-    [params.month, today],
-  );
+  const [today] = useState(() => new Date());
+  const baseMonth = parseMonthKey(params.month) ?? startOfMonth(today);
   const [visibleYear, setVisibleYear] = useState(baseMonth.getFullYear());
 
   // Each item is a month's offset from this month.
-  const thisMonth = useMemo(() => startOfMonth(today), [today]);
-  const monthOffsets = useMemo(
-    () => Array.from({ length: MONTHS_EACH_WAY * 2 + 1 }, (_, i) => i - MONTHS_EACH_WAY),
-    [],
+  const thisMonth = startOfMonth(today);
+  const monthOffsets = Array.from(
+    { length: MONTHS_EACH_WAY * 2 + 1 },
+    (_, i) => i - MONTHS_EACH_WAY,
   );
   const indexOf = (month: Date) =>
     Math.max(
@@ -76,27 +73,21 @@ export default function MonthScreen() {
   const initialIndex = indexOf(baseMonth);
 
   // Month heights vary (4–6 weeks), so precompute offsets for getItemLayout.
-  const layout = useMemo(() => {
-    const offsets: number[] = [];
-    const heights: number[] = [];
-    let offset = 0;
-    for (const i of monthOffsets) {
-      const height = TITLE_HEIGHT + weeksInMonth(addMonths(thisMonth, i)) * WEEK_HEIGHT;
-      offsets.push(offset);
-      heights.push(height);
-      offset += height;
-    }
-    return { offsets, heights };
-  }, [monthOffsets, thisMonth]);
+  const offsets: number[] = [];
+  const heights: number[] = [];
+  let offset = 0;
+  for (const i of monthOffsets) {
+    const height = TITLE_HEIGHT + weeksInMonth(addMonths(thisMonth, i)) * WEEK_HEIGHT;
+    offsets.push(offset);
+    heights.push(height);
+    offset += height;
+  }
 
-  const getItemLayout = useCallback(
-    (_: unknown, index: number) => ({
-      index,
-      length: layout.heights[index],
-      offset: layout.offsets[index],
-    }),
-    [layout],
-  );
+  const getItemLayout = (_: unknown, index: number) => ({
+    index,
+    length: heights[index],
+    offset: offsets[index],
+  });
 
   // FlatList doesn't allow swapping the viewability callback, so keep one stable function and
   // read the latest loader from a ref.
@@ -127,10 +118,10 @@ export default function MonthScreen() {
   // there whenever the list lays out or comes back into view, in case something resets the offset
   // while it's offscreen (it once opened on 2016 on a phone).
   const userScrolled = useRef(false);
-  const holdInitialMonth = useCallback(() => {
+  const holdInitialMonth = () => {
     if (userScrolled.current) return;
     listRef.current?.scrollToIndex({ index: initialIndex, animated: false });
-  }, [initialIndex]);
+  };
   useFocusEffect(holdInitialMonth);
 
   const scrollToToday = () => {
@@ -139,9 +130,9 @@ export default function MonthScreen() {
   };
   useNowAction('time', scrollToToday);
 
-  const openDay = useCallback((date: Date) => {
+  const openDay = (date: Date) => {
     router.push({ pathname: '/time/day', params: { date: dayKey(date) } });
-  }, []);
+  };
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>
@@ -209,7 +200,7 @@ export default function MonthScreen() {
 }
 
 function WeekdayHeader({ theme }: { theme: Theme }) {
-  const labels = useMemo(() => weekdayLabels(WEEK_STARTS_ON), []);
+  const labels = weekdayLabels(WEEK_STARTS_ON);
   return (
     <View style={[styles.weekdays, { borderBottomColor: theme.separator }]}>
       {labels.map((label, i) => (

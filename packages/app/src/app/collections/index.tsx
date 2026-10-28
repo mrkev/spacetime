@@ -1,5 +1,4 @@
 import { Stack, router } from 'expo-router';
-import { useMemo } from 'react';
 import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 
 import { Section, Separator } from '../../components/Form';
@@ -13,11 +12,8 @@ export default function CollectionsScreen() {
   const theme = useTheme();
   const { collections, places } = useSpaceState();
   const reminderCount = useLocationReminders().length;
-  const counts = useMemo(() => {
-    const map = new Map<string, number>([[REMINDERS_COLLECTION_ID, reminderCount]]);
-    for (const p of places) map.set(p.collectionId, (map.get(p.collectionId) ?? 0) + 1);
-    return map;
-  }, [places, reminderCount]);
+  const counts = new Map<string, number>([[REMINDERS_COLLECTION_ID, reminderCount]]);
+  for (const p of places) counts.set(p.collectionId, (counts.get(p.collectionId) ?? 0) + 1);
 
   const reminders = collections.filter((c) => c.id === REMINDERS_COLLECTION_ID);
   const others = collections.filter((c) => c.id !== REMINDERS_COLLECTION_ID);

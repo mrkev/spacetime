@@ -1,6 +1,6 @@
 import { Stack, useLocalSearchParams } from 'expo-router';
 import Storage from 'expo-sqlite/kv-store';
-import { useCallback, useMemo, useRef, useState } from 'react';
+import { useRef, useState } from 'react';
 import {
   FlatList,
   Pressable,
@@ -62,7 +62,7 @@ export default function DayScreen() {
   const { createEvent, openEvent, openReminder, showAddMenu } = useTimeActions();
 
   // Pages are indexed relative to a fixed anchor so indices stay stable while swiping.
-  const anchor = useMemo(() => startOfDay(parseDayKey(params.date) ?? new Date()), [params.date]);
+  const anchor = startOfDay(parseDayKey(params.date) ?? new Date());
   const [selected, setSelected] = useState(anchor);
   // The event being edited (long-pressed), and whether it's mid-drag.
   const [selection, setSelection] = useState<{ key: string; day: string } | null>(null);
@@ -70,15 +70,15 @@ export default function DayScreen() {
   const [gestureActive, setGestureActive] = useState(false);
   const [hourHeight, setHourHeight] = useState(loadHourHeight);
   const hourHeightRef = useRef(hourHeight);
-  const zoomTo = useCallback((height: number) => {
+  const zoomTo = (height: number) => {
     hourHeightRef.current = height;
     setHourHeight(height);
-  }, []);
+  };
   // Pages re-render when the selection or zoom changes.
-  const pagerState = useMemo(() => ({ selection, hourHeight }), [selection, hourHeight]);
-  const saveZoom = useCallback(() => {
+  const pagerState = { selection, hourHeight };
+  const saveZoom = () => {
     Storage.setItemSync(ZOOM_KEY, String(hourHeightRef.current));
-  }, []);
+  };
 
   const dayPager = useRef<FlatList<number>>(null);
   const weekPager = useRef<FlatList<number>>(null);
@@ -88,44 +88,29 @@ export default function DayScreen() {
     Math.max(0, isSameDay(anchor, new Date()) ? nowOffset(hourHeight) : (8 - 1) * hourHeight),
   );
 
-  const onScrollY = useCallback((y: number) => {
+  const onScrollY = (y: number) => {
     scrollOffsetRef.current = y;
-  }, []);
+  };
 
-  const dayIndices = useMemo(() => Array.from({ length: DAYS_EACH_WAY * 2 + 1 }, (_, i) => i), []);
-  const anchorWeek = useMemo(() => startOfWeek(anchor, WEEK_STARTS_ON), [anchor]);
-  const weekIndices = useMemo(
-    () => Array.from({ length: Math.ceil((DAYS_EACH_WAY * 2) / 7) + 3 }, (_, i) => i),
-    [],
-  );
+  const dayIndices = Array.from({ length: DAYS_EACH_WAY * 2 + 1 }, (_, i) => i);
+  const anchorWeek = startOfWeek(anchor, WEEK_STARTS_ON);
+  const weekIndices = Array.from({ length: Math.ceil((DAYS_EACH_WAY * 2) / 7) + 3 }, (_, i) => i);
   const weeksBefore = Math.ceil(DAYS_EACH_WAY / 7) + 1;
 
-  const dayForIndex = useCallback((i: number) => addDays(anchor, i - DAYS_EACH_WAY), [anchor]);
-  const indexForDay = useCallback(
-    (d: Date) => differenceInDays(anchor, d) + DAYS_EACH_WAY,
-    [anchor],
-  );
-  const weekForIndex = useCallback(
-    (i: number) => addDays(anchorWeek, (i - weeksBefore) * 7),
-    [anchorWeek, weeksBefore],
-  );
-  const indexForWeek = useCallback(
-    (d: Date) =>
-      Math.round(differenceInDays(anchorWeek, startOfWeek(d, WEEK_STARTS_ON)) / 7) + weeksBefore,
-    [anchorWeek, weeksBefore],
-  );
+  const dayForIndex = (i: number) => addDays(anchor, i - DAYS_EACH_WAY);
+  const indexForDay = (d: Date) => differenceInDays(anchor, d) + DAYS_EACH_WAY;
+  const weekForIndex = (i: number) => addDays(anchorWeek, (i - weeksBefore) * 7);
+  const indexForWeek = (d: Date) =>
+    Math.round(differenceInDays(anchorWeek, startOfWeek(d, WEEK_STARTS_ON)) / 7) + weeksBefore;
 
-  const select = useCallback(
-    (day: Date, { syncDays = true, syncWeeks = true } = {}) => {
-      const index = indexForDay(day);
-      if (index < 0 || index >= dayIndices.length) return;
-      setSelected(startOfDay(day));
-      setSelection(null);
-      if (syncDays) dayPager.current?.scrollToIndex({ index, animated: false });
-      if (syncWeeks) weekPager.current?.scrollToIndex({ index: indexForWeek(day), animated: true });
-    },
-    [indexForDay, indexForWeek, dayIndices.length],
-  );
+  const select = (day: Date, { syncDays = true, syncWeeks = true } = {}) => {
+    const index = indexForDay(day);
+    if (index < 0 || index >= dayIndices.length) return;
+    setSelected(startOfDay(day));
+    setSelection(null);
+    if (syncDays) dayPager.current?.scrollToIndex({ index, animated: false });
+    if (syncWeeks) weekPager.current?.scrollToIndex({ index: indexForWeek(day), animated: true });
+  };
 
   useRememberTimeLevel('day');
 
@@ -151,10 +136,11 @@ export default function DayScreen() {
     if (!isSameDay(day, selected)) select(day, { syncWeeks: false });
   };
 
-  const pageLayout = useCallback(
-    (_: unknown, index: number) => ({ index, length: width, offset: width * index }),
-    [width],
-  );
+  const pageLayout = (_: unknown, index: number) => ({
+    index,
+    length: width,
+    offset: width * index,
+  });
 
   return (
     <View style={[styles.container, { backgroundColor: theme.background }]}>

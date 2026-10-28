@@ -1,5 +1,4 @@
 import { router } from 'expo-router';
-import { useCallback } from 'react';
 import { ActionSheetIOS, Alert, Linking, Platform } from 'react-native';
 
 import { useCalendar, type CalendarEvent, type CalendarReminder } from './CalendarProvider';
@@ -89,159 +88,134 @@ export function showInReminders(reminderId: string) {
 export function useTimeActions() {
   const { status, requestAccess, defaultEventCalendar, writableCalendar, refresh } = useCalendar();
 
-  const createEvent = useCallback(
-    async (start?: Date) => {
-      if (status !== 'granted') {
-        await requestAccess();
-        return;
-      }
-      const calendar = defaultEventCalendar();
-      if (!calendar) {
-        Alert.alert('No Calendar', 'Add a calendar account in Settings to create events.');
-        return;
-      }
-      const startDate = start ?? defaultStart();
-      const endDate = new Date(startDate.getTime() + 60 * 60_000);
-      // Use the system editor so events get every field Calendar supports.
-      const result = await calendar.addEventWithForm({ startDate, endDate });
-      if (result.action === 'saved' || result.action === 'done') refresh();
-    },
-    [status, requestAccess, defaultEventCalendar, refresh],
-  );
+  const createEvent = async (start?: Date) => {
+    if (status !== 'granted') {
+      await requestAccess();
+      return;
+    }
+    const calendar = defaultEventCalendar();
+    if (!calendar) {
+      Alert.alert('No Calendar', 'Add a calendar account in Settings to create events.');
+      return;
+    }
+    const startDate = start ?? defaultStart();
+    const endDate = new Date(startDate.getTime() + 60 * 60_000);
+    // Use the system editor so events get every field Calendar supports.
+    const result = await calendar.addEventWithForm({ startDate, endDate });
+    if (result.action === 'saved' || result.action === 'done') refresh();
+  };
 
-  const openEvent = useCallback(
-    async (event: CalendarEvent) => {
-      try {
-        const result = await event.source.openInCalendar({
-          // Events from listEvents are bare native objects that skip expo-calendar's JS wrapper,
-          // so dates must already be strings (the native side rejects Date objects).
-          instanceStartDate: event.start.toISOString(),
-          allowsEditing: true,
-          allowsCalendarPreview: true,
-        });
-        if (result.action !== 'canceled') refresh();
-      } catch (error) {
-        console.warn('[calendar] failed to open event', error);
-        Alert.alert('Couldn’t Open Event', 'It may have been deleted. Try again in a moment.');
-        refresh();
-      }
-    },
-    [refresh],
-  );
+  const openEvent = async (event: CalendarEvent) => {
+    try {
+      const result = await event.source.openInCalendar({
+        // Events from listEvents are bare native objects that skip expo-calendar's JS wrapper,
+        // so dates must already be strings (the native side rejects Date objects).
+        instanceStartDate: event.start.toISOString(),
+        allowsEditing: true,
+        allowsCalendarPreview: true,
+      });
+      if (result.action !== 'canceled') refresh();
+    } catch (error) {
+      console.warn('[calendar] failed to open event', error);
+      Alert.alert('Couldn’t Open Event', 'It may have been deleted. Try again in a moment.');
+      refresh();
+    }
+  };
 
-  const createReminder = useCallback((date?: Date) => {
+  const createReminder = (date?: Date) => {
     router.push({
       pathname: '/reminder/new',
       params: date ? { date: date.toISOString() } : {},
     });
-  }, []);
+  };
 
-  const openReminder = useCallback((reminder: CalendarReminder) => {
+  const openReminder = (reminder: CalendarReminder) => {
     router.push({ pathname: '/reminder/[id]', params: { id: reminder.key } });
-  }, []);
+  };
 
   /** The "+" menu: event or reminder. */
-  const showAddMenu = useCallback(
-    (day?: Date) => {
-      const options: Option[] = [
-        { label: 'New Event', run: () => createEvent(day ? defaultStart(day) : undefined) },
-      ];
-      if (Platform.OS === 'ios') {
-        options.push({ label: 'New Reminder', run: () => createReminder(day) });
-      }
-      showOptions(Platform.OS === 'ios' ? undefined : 'Add', options);
-    },
-    [createEvent, createReminder],
-  );
+  const showAddMenu = (day?: Date) => {
+    const options: Option[] = [
+      { label: 'New Event', run: () => createEvent(day ? defaultStart(day) : undefined) },
+    ];
+    if (Platform.OS === 'ios') {
+      options.push({ label: 'New Reminder', run: () => createReminder(day) });
+    }
+    showOptions(Platform.OS === 'ios' ? undefined : 'Add', options);
+  };
+
+  // The edits below refresh after a try/catch rather than in a `finally`, which React Compiler
+  // can't compile yet.
 
   /** Saves new times for a dragged event. Resolves false if it wasn't saved. */
-  const rescheduleEvent = useCallback(
-    async (event: CalendarEvent, start: Date, end: Date) => {
-      const span = await chooseSpan(event, 'Save');
-      if (!span) return false;
-      try {
-        // ISO strings for the same reason as in openEvent.
-        await occurrence(event, span).update({
-          startDate: start.toISOString(),
-          endDate: end.toISOString(),
-        });
-        return true;
-      } catch (error) {
-        reportFailure('move event', error);
-        return false;
-      } finally {
-        refresh();
-      }
-    },
-    [refresh],
-  );
+  const rescheduleEvent = async (event: CalendarEvent, start: Date, end: Date) => {
+    const span = await chooseSpan(event, 'Save');
+    if (!span) return false;
+    let saved = false;
+    try {
+      // ISO strings for the same reason as in openEvent.
+      await occurrence(event, span).update({
+        startDate: start.toISOString(),
+        endDate: end.toISOString(),
+      });
+      saved = true;
+    } catch (error) {
+      reportFailure('move event', error);
+    }
+    refresh();
+    return saved;
+  };
 
-  const deleteEvent = useCallback(
-    async (event: CalendarEvent) => {
-      const span = await chooseSpan(event, 'Delete');
-      if (!span) return false;
-      try {
-        await occurrence(event, span).delete();
-        return true;
-      } catch (error) {
-        reportFailure('delete event', error);
-        return false;
-      } finally {
-        refresh();
-      }
-    },
-    [refresh],
-  );
+  const deleteEvent = async (event: CalendarEvent) => {
+    const span = await chooseSpan(event, 'Delete');
+    if (!span) return false;
+    let deleted = false;
+    try {
+      await occurrence(event, span).delete();
+      deleted = true;
+    } catch (error) {
+      reportFailure('delete event', error);
+    }
+    refresh();
+    return deleted;
+  };
 
-  const insertCopy = useCallback(
-    async (copied: CopiedEvent, start: Date) => {
-      const calendar = writableCalendar(copied.calendarId) ?? defaultEventCalendar();
-      if (!calendar) {
-        Alert.alert('No Calendar', 'Add a calendar account in Settings to create events.');
-        return;
-      }
-      try {
-        await calendar.createEvent({
-          title: copied.title,
-          startDate: start.toISOString(),
-          endDate: new Date(start.getTime() + copied.durationMinutes * 60_000).toISOString(),
-          allDay: false,
-          location: copied.location,
-          notes: copied.notes,
-          url: copied.url,
-          alarms: copied.alarms,
-          availability: copied.availability,
-        });
-      } catch (error) {
-        reportFailure('paste event', error);
-      } finally {
-        refresh();
-      }
-    },
-    [writableCalendar, defaultEventCalendar, refresh],
-  );
+  const insertCopy = async (copied: CopiedEvent, start: Date) => {
+    const calendar = writableCalendar(copied.calendarId) ?? defaultEventCalendar();
+    if (!calendar) {
+      Alert.alert('No Calendar', 'Add a calendar account in Settings to create events.');
+      return;
+    }
+    try {
+      await calendar.createEvent({
+        title: copied.title,
+        startDate: start.toISOString(),
+        endDate: new Date(start.getTime() + copied.durationMinutes * 60_000).toISOString(),
+        allDay: false,
+        location: copied.location,
+        notes: copied.notes,
+        url: copied.url,
+        alarms: copied.alarms,
+        availability: copied.availability,
+      });
+    } catch (error) {
+      reportFailure('paste event', error);
+    }
+    refresh();
+  };
 
-  const pasteEvent = useCallback(
-    async (start: Date) => {
-      const copied = getCopiedEvent();
-      if (copied) await insertCopy(copied, start);
-    },
-    [insertCopy],
-  );
+  const pasteEvent = async (start: Date) => {
+    const copied = getCopiedEvent();
+    if (copied) await insertCopy(copied, start);
+  };
 
   // Calendar puts the duplicate at the same time, alongside the original.
-  const duplicateEvent = useCallback(
-    (event: CalendarEvent) => insertCopy(snapshotEvent(event), event.start),
-    [insertCopy],
-  );
+  const duplicateEvent = (event: CalendarEvent) => insertCopy(snapshotEvent(event), event.start);
 
-  const cutEvent = useCallback(
-    async (event: CalendarEvent) => {
-      copyEvent(event);
-      await deleteEvent(event);
-    },
-    [deleteEvent],
-  );
+  const cutEvent = async (event: CalendarEvent) => {
+    copyEvent(event);
+    await deleteEvent(event);
+  };
 
   return {
     createEvent,
