@@ -1,3 +1,4 @@
+import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import * as Location from 'expo-location';
 import { router } from 'expo-router';
 import { useEffect, useRef, useState } from 'react';
@@ -32,6 +33,8 @@ import { REMINDERS_COLLECTION_ID, useSpaceState, type Collection } from '../../.
 
 const ALL = 'all';
 const USER_DELTA = 0.03;
+const SEARCH_HEIGHT = 46;
+const liquidGlass = isLiquidGlassAvailable();
 
 export default function SpaceScreen() {
   const theme = useTheme();
@@ -56,6 +59,7 @@ export default function SpaceScreen() {
   const [mapReady, setMapReady] = useState(false);
   const [userRegion, setUserRegion] = useState<Region | null>(null);
   const centeredOnUser = useRef(false);
+  const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   const collectionsById = new Map(collections.map((c) => [c.id, c] as const));
   const counts = new Map<string, number>([[REMINDERS_COLLECTION_ID, reminders.length]]);
@@ -80,6 +84,22 @@ export default function SpaceScreen() {
     })().catch((error) => console.warn('[space] location failed', error));
   }, []);
 
+  // Keep the search bar above the keyboard, moving with it.
+  useEffect(() => {
+    const show = Keyboard.addListener('keyboardWillShow', (e) => {
+      Keyboard.scheduleLayoutAnimation(e);
+      setKeyboardHeight(e.endCoordinates.height);
+    });
+    const hide = Keyboard.addListener('keyboardWillHide', (e) => {
+      Keyboard.scheduleLayoutAnimation(e);
+      setKeyboardHeight(0);
+    });
+    return () => {
+      show.remove();
+      hide.remove();
+    };
+  }, []);
+
   // The map ignores camera changes until it's ready, so center on the user once both are in.
   useEffect(() => {
     if (!mapReady || !userRegion || centeredOnUser.current) return;
@@ -94,7 +114,7 @@ export default function SpaceScreen() {
       return;
     }
     mapRef.current?.fitToCoordinates(coords, {
-      edgePadding: { top: insets.top + 140, right: 60, bottom: insets.bottom + 80, left: 60 },
+      edgePadding: { top: insets.top + 90, right: 60, bottom: insets.bottom + 110, left: 60 },
       animated: true,
     });
   };
@@ -190,7 +210,7 @@ export default function SpaceScreen() {
         showsMyLocationButton={false}
         showsCompass={false}
         onLongPress={onLongPress}
-        mapPadding={{ top: insets.top + 110, right: 0, bottom: 0, left: 0 }}
+        mapPadding={{ top: insets.top + 56, right: 0, bottom: SEARCH_HEIGHT + 8, left: 0 }}
       >
         {visiblePlaces.map((place) => {
           const collection = collectionsById.get(place.collectionId);
@@ -244,34 +264,47 @@ export default function SpaceScreen() {
         ))}
       </MapView>
 
-      <View style={[styles.top, { paddingTop: insets.top + 8 }]} pointerEvents="box-none">
-        <View style={[styles.search, cardStyle(theme)]}>
-          <Icon name={icons.search} color={theme.secondaryText} size={17} />
-          <TextInput
-            style={[styles.searchInput, { color: theme.text }]}
-            placeholder="Search for a place or address"
-            placeholderTextColor={theme.secondaryText}
-            value={query}
-            onChangeText={changeQuery}
-            onFocus={() => {
-              setEditing(true);
-              changeQuery(query);
-            }}
-            onBlur={() => setEditing(false)}
-            onSubmitEditing={runSearch}
-            returnKeyType="search"
-            autoCorrect={false}
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        style={styles.top}
+        contentContainerStyle={[styles.chips, { paddingTop: insets.top + 8 }]}
+        keyboardShouldPersistTaps="handled"
+      >
+        <Chip
+          label="All"
+          count={total}
+          selected={filter === ALL}
+          onPress={() => selectFilter(ALL)}
+          theme={theme}
+        />
+        {collections.map((collection) => (
+          <Chip
+            key={collection.id}
+            label={collection.name}
+            collection={collection}
+            count={counts.get(collection.id) ?? 0}
+            selected={filter === collection.id}
+            onPress={() => selectFilter(collection.id)}
+            theme={theme}
           />
-          {searching ? <ActivityIndicator size="small" /> : null}
-          {query && !searching ? (
-            <Pressable hitSlop={8} onPress={clearSearch}>
-              <Icon name={icons.close} color={theme.tertiaryText} size={17} />
-            </Pressable>
-          ) : null}
-        </View>
+        ))}
+        <Pressable
+          onPress={() => router.push('/collections')}
+          style={[styles.chip, cardStyle(theme)]}
+          accessibilityLabel="Manage collections"
+        >
+          <Icon name={icons.folder} color={theme.blue} size={15} />
+          <Text style={[styles.chipLabel, { color: theme.blue }]}>Edit</Text>
+        </Pressable>
+      </ScrollView>
 
+      <View
+        style={[styles.bottom, { bottom: Math.max(insets.bottom, keyboardHeight) + 8 }]}
+        pointerEvents="box-none"
+      >
         {editing && suggestions.length > 0 ? (
-          <View style={[styles.suggestions, cardStyle(theme)]}>
+          <Surface style={styles.suggestions}>
             <ScrollView style={styles.suggestionList} keyboardShouldPersistTaps="handled">
               {suggestions.map((suggestion, i) => (
                 <Pressable
@@ -300,80 +333,62 @@ export default function SpaceScreen() {
                 </Pressable>
               ))}
             </ScrollView>
-          </View>
-        ) : (
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.chips}
-            keyboardShouldPersistTaps="handled"
-          >
-            <Chip
-              label="All"
-              count={total}
-              selected={filter === ALL}
-              onPress={() => selectFilter(ALL)}
-              theme={theme}
-            />
-            {collections.map((collection) => (
-              <Chip
-                key={collection.id}
-                label={collection.name}
-                collection={collection}
-                count={counts.get(collection.id) ?? 0}
-                selected={filter === collection.id}
-                onPress={() => selectFilter(collection.id)}
-                theme={theme}
-              />
-            ))}
-            <Pressable
-              onPress={() => router.push('/collections')}
-              style={[styles.chip, cardStyle(theme)]}
-              accessibilityLabel="Manage collections"
-            >
-              <Icon name={icons.folder} color={theme.blue} size={15} />
-              <Text style={[styles.chipLabel, { color: theme.blue }]}>Edit</Text>
-            </Pressable>
-          </ScrollView>
-        )}
-      </View>
-
-      {result ? (
-        <View style={[styles.resultCard, cardStyle(theme), { bottom: insets.bottom + 16 }]}>
-          <View style={{ flex: 1 }}>
-            <Text style={[styles.resultName, { color: theme.text }]} numberOfLines={1}>
-              {result.name}
-            </Text>
-            {result.address ? (
-              <Text
-                style={[styles.resultAddress, { color: theme.secondaryText }]}
-                numberOfLines={1}
-              >
-                {result.address}
+          </Surface>
+        ) : result ? (
+          <Surface style={styles.resultCard}>
+            <View style={{ flex: 1 }}>
+              <Text style={[styles.resultName, { color: theme.text }]} numberOfLines={1}>
+                {result.name}
               </Text>
-            ) : null}
-          </View>
-          <Pressable
-            onPress={() => addPlaceAt(result, { name: result.name, address: result.address })}
-            style={[styles.saveButton, { backgroundColor: theme.blue }]}
-          >
-            <Text style={styles.saveLabel}>Save</Text>
-          </Pressable>
-        </View>
-      ) : (
-        <View
-          style={[styles.hint, cardStyle(theme), { bottom: insets.bottom + 16 }]}
-          pointerEvents="none"
-        >
-          <Text style={[styles.hintText, { color: theme.secondaryText }]}>
-            {notFound
-              ? `No results for “${query.trim()}”`
-              : total === 0
-                ? 'Long-press the map to save a place'
-                : `${visiblePlaces.length + visibleReminders.length} places`}
-          </Text>
-        </View>
-      )}
+              {result.address ? (
+                <Text
+                  style={[styles.resultAddress, { color: theme.secondaryText }]}
+                  numberOfLines={1}
+                >
+                  {result.address}
+                </Text>
+              ) : null}
+            </View>
+            <Pressable
+              onPress={() => addPlaceAt(result, { name: result.name, address: result.address })}
+              style={[styles.saveButton, { backgroundColor: theme.blue }]}
+            >
+              <Text style={styles.saveLabel}>Save</Text>
+            </Pressable>
+          </Surface>
+        ) : notFound || total === 0 ? (
+          <Surface style={styles.hint} pointerEvents="none">
+            <Text style={[styles.hintText, { color: theme.secondaryText }]}>
+              {notFound ? `No results for “${query.trim()}”` : 'Long-press the map to save a place'}
+            </Text>
+          </Surface>
+        ) : null}
+
+        <Surface style={styles.search}>
+          <Icon name={icons.search} color={theme.secondaryText} size={17} />
+          <TextInput
+            style={[styles.searchInput, { color: theme.text }]}
+            placeholder="Search for a place or address"
+            placeholderTextColor={theme.secondaryText}
+            value={query}
+            onChangeText={changeQuery}
+            onFocus={() => {
+              setEditing(true);
+              changeQuery(query);
+            }}
+            onBlur={() => setEditing(false)}
+            onSubmitEditing={runSearch}
+            returnKeyType="search"
+            autoCorrect={false}
+          />
+          {searching ? <ActivityIndicator size="small" /> : null}
+          {query && !searching ? (
+            <Pressable hitSlop={8} onPress={clearSearch}>
+              <Icon name={icons.close} color={theme.tertiaryText} size={17} />
+            </Pressable>
+          ) : null}
+        </Surface>
+      </View>
     </View>
   );
 }
@@ -429,6 +444,13 @@ function Chip({
   );
 }
 
+/** A floating panel: Liquid Glass where available, otherwise an opaque card. */
+function Surface({ style, ...props }: React.ComponentProps<typeof View>) {
+  const theme = useTheme();
+  if (liquidGlass) return <GlassView style={style} {...props} />;
+  return <View style={[style, cardStyle(theme)]} {...props} />;
+}
+
 function toCoordinate(p: Coordinate): Coordinate {
   return { latitude: p.latitude, longitude: p.longitude };
 }
@@ -446,15 +468,15 @@ function cardStyle(theme: Theme) {
 
 const styles = StyleSheet.create({
   container: { flex: 1 },
-  top: { position: 'absolute', top: 0, left: 0, right: 0, gap: 10 },
+  top: { position: 'absolute', top: 0, left: 0, right: 0, flexGrow: 0 },
+  bottom: { position: 'absolute', left: 20, right: 20, gap: 8 },
   search: {
-    marginHorizontal: 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 8,
-    paddingHorizontal: 12,
-    height: 44,
-    borderRadius: 22,
+    paddingHorizontal: 16,
+    height: SEARCH_HEIGHT,
+    borderRadius: SEARCH_HEIGHT / 2,
   },
   searchInput: { flex: 1, fontSize: 17 },
   chips: { paddingHorizontal: 12, gap: 8, paddingBottom: 6 },
@@ -469,27 +491,23 @@ const styles = StyleSheet.create({
   chipDot: { width: 10, height: 10, borderRadius: 5 },
   chipLabel: { fontSize: 15, fontWeight: '600' },
   chipCount: { fontSize: 13, fontWeight: '500' },
-  suggestions: { marginHorizontal: 12, maxHeight: 320, borderRadius: 16 },
-  suggestionList: { borderRadius: 16 },
+  suggestions: { maxHeight: 320, borderRadius: 22 },
+  suggestionList: { borderRadius: 22 },
   suggestion: { paddingHorizontal: 16, paddingVertical: 10 },
   suggestionTitle: { fontSize: 16, fontWeight: '500' },
   suggestionSubtitle: { fontSize: 13, marginTop: 2 },
   resultCard: {
-    position: 'absolute',
-    left: 12,
-    right: 12,
     flexDirection: 'row',
     alignItems: 'center',
     gap: 12,
     padding: 14,
-    borderRadius: 16,
+    borderRadius: 22,
   },
   resultName: { fontSize: 17, fontWeight: '600' },
   resultAddress: { fontSize: 13, marginTop: 2 },
   saveButton: { paddingHorizontal: 18, paddingVertical: 9, borderRadius: 18 },
   saveLabel: { color: '#fff', fontWeight: '600', fontSize: 15 },
   hint: {
-    position: 'absolute',
     alignSelf: 'center',
     paddingHorizontal: 14,
     paddingVertical: 8,
