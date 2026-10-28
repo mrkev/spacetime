@@ -26,9 +26,15 @@ import {
   type SearchSuggestion,
 } from '../../../lib/geo';
 import { useNowAction } from '../../../lib/nowAction';
-import { useTheme, withAlpha, type Theme } from '../../../lib/theme';
-import { useLocationReminders } from '../../../space/locationReminders';
+import { PIN_OFFSET, useTheme, withAlpha, type Theme } from '../../../lib/theme';
 import { loadMapRegion, saveMapRegion } from '../../../space/mapRegion';
+import {
+  isInCollection,
+  pinColor,
+  placeCollections,
+  useMapPlaces,
+  type MapPlace,
+} from '../../../space/places';
 import { REMINDERS_COLLECTION_ID, useSpaceState, type Collection } from '../../../space/store';
 
 const ALL = 'all';
@@ -40,8 +46,8 @@ export default function SpaceScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const mapRef = useRef<MapView>(null);
-  const { collections, places } = useSpaceState();
-  const reminders = useLocationReminders();
+  const { collections } = useSpaceState();
+  const mapPlaces = useMapPlaces();
 
   const [filter, setFilter] = useState<string>(ALL);
   const [query, setQuery] = useState('');
@@ -50,6 +56,8 @@ export default function SpaceScreen() {
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<PlaceResult[]>([]);
   const [selected, setSelected] = useState(0);
+  // The place whose pin was tapped once. Tapping it again opens it.
+  const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [locationGranted, setLocationGranted] = useState(false);
   const [initialRegion] = useState(loadMapRegion);
@@ -61,14 +69,17 @@ export default function SpaceScreen() {
   const centeredOnUser = useRef(false);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
-  const collectionsById = new Map(collections.map((c) => [c.id, c] as const));
-  const counts = new Map<string, number>([[REMINDERS_COLLECTION_ID, reminders.length]]);
-  for (const p of places) counts.set(p.collectionId, (counts.get(p.collectionId) ?? 0) + 1);
-  const visiblePlaces = filter === ALL ? places : places.filter((p) => p.collectionId === filter);
-  const showReminders = filter === ALL || filter === REMINDERS_COLLECTION_ID;
-  const visibleReminders = showReminders ? reminders : [];
-  const total = places.length + reminders.length;
-  const reminderColor = collectionsById.get(REMINDERS_COLLECTION_ID)?.color ?? theme.tint;
+  const inFilter = (id: string) =>
+    id === ALL ? mapPlaces : mapPlaces.filter((p) => isInCollection(p, id));
+  const visiblePlaces = inFilter(filter);
+  const total = mapPlaces.length;
+  const reminderColor =
+    collections.find((c) => c.id === REMINDERS_COLLECTION_ID)?.color ?? theme.tint;
+  const selectedPlace = visiblePlaces.find((p) => p.id === selectedPlaceId) ?? null;
+  // Todos' geofences, for the selected place or when looking at all of them.
+  const fences = (
+    filter === REMINDERS_COLLECTION_ID ? visiblePlaces : selectedPlace ? [selectedPlace] : []
+  ).flatMap((p) => p.todos);
 
   // Find the user once we have permission.
   useEffect(() => {
@@ -121,12 +132,26 @@ export default function SpaceScreen() {
 
   const selectFilter = (id: string) => {
     setFilter(id);
-    focusOn(
-      [
-        ...(id === ALL ? places : places.filter((p) => p.collectionId === id)),
-        ...(id === ALL || id === REMINDERS_COLLECTION_ID ? reminders : []),
-      ].map(toCoordinate),
-    );
+    focusOn(inFilter(id).map(toCoordinate));
+  };
+
+  const openPlace = (place: MapPlace) => {
+    // Keep the pin in view above the sheet, which covers the bottom half.
+    const region = visibleRegion.current;
+    if (region) {
+      mapRef.current?.animateToRegion({
+        ...region,
+        latitude: place.latitude - region.latitudeDelta / 4,
+        longitude: place.longitude,
+      });
+    }
+    router.push({ pathname: '/place/[id]', params: { id: place.id } });
+  };
+
+  const pressPlace = (place: MapPlace) => {
+    Keyboard.dismiss();
+    if (selectedPlaceId === place.id) openPlace(place);
+    else setSelectedPlaceId(place.id);
   };
 
   const goToMyLocation = async () => {
@@ -213,39 +238,26 @@ export default function SpaceScreen() {
         mapPadding={{ top: insets.top + 56, right: 0, bottom: SEARCH_HEIGHT + 8, left: 0 }}
       >
         {visiblePlaces.map((place) => {
-          const collection = collectionsById.get(place.collectionId);
-          const color = collection?.color ?? theme.tint;
+          const color = pinColor(place, collections, theme.tint);
           return (
             <Marker
               // Including the color forces a re-render when the collection's color changes.
               key={`${place.id}:${color}`}
               coordinate={toCoordinate(place)}
               pinColor={color}
-              title={place.name}
-              description={collection?.name}
-              onCalloutPress={() =>
-                router.push({ pathname: '/place/[id]', params: { id: place.id } })
-              }
+              centerOffset={PIN_OFFSET}
+              accessibilityLabel={place.name}
+              // Without a title, selecting it doesn't open a callout.
+              onPress={() => pressPlace(place)}
+              onDeselect={() => setSelectedPlaceId((id) => (id === place.id ? null : id))}
             />
           );
         })}
-        {visibleReminders.map((reminder) => (
-          <Marker
-            key={`reminder:${reminder.id}:${reminderColor}`}
-            coordinate={toCoordinate(reminder)}
-            pinColor={reminderColor}
-            title={reminder.title}
-            description={reminder.placeName}
-            onCalloutPress={() =>
-              router.push({ pathname: '/place/reminder/[id]', params: { id: reminder.id } })
-            }
-          />
-        ))}
-        {visibleReminders.map((reminder) => (
+        {fences.map((todo) => (
           <Circle
-            key={`radius:${reminder.id}:${reminderColor}:${reminder.radius}`}
-            center={toCoordinate(reminder)}
-            radius={reminder.radius}
+            key={`radius:${todo.id}:${reminderColor}:${todo.radius}`}
+            center={toCoordinate(todo)}
+            radius={todo.radius}
             strokeColor={withAlpha(reminderColor, 0.8)}
             fillColor={withAlpha(reminderColor, 0.15)}
             strokeWidth={1.5}
@@ -256,9 +268,13 @@ export default function SpaceScreen() {
             key={`result:${i}:${found.latitude},${found.longitude}`}
             coordinate={toCoordinate(found)}
             pinColor={theme.blue}
+            centerOffset={PIN_OFFSET}
             title={found.name}
             description="Tap to save"
-            onPress={() => setSelected(i)}
+            onPress={() => {
+              setSelected(i);
+              setSelectedPlaceId(null);
+            }}
             onCalloutPress={() => addPlaceAt(found, { name: found.name, address: found.address })}
           />
         ))}
@@ -283,7 +299,7 @@ export default function SpaceScreen() {
             key={collection.id}
             label={collection.name}
             collection={collection}
-            count={counts.get(collection.id) ?? 0}
+            count={inFilter(collection.id).length}
             selected={filter === collection.id}
             onPress={() => selectFilter(collection.id)}
             theme={theme}
@@ -334,6 +350,23 @@ export default function SpaceScreen() {
               ))}
             </ScrollView>
           </Surface>
+        ) : selectedPlace ? (
+          <Pressable onPress={() => openPlace(selectedPlace)}>
+            <Surface style={styles.resultCard}>
+              <View style={{ flex: 1 }}>
+                <Text style={[styles.resultName, { color: theme.text }]} numberOfLines={1}>
+                  {selectedPlace.name}
+                </Text>
+                <Text
+                  style={[styles.resultAddress, { color: theme.secondaryText }]}
+                  numberOfLines={1}
+                >
+                  {describePlace(selectedPlace, collections)}
+                </Text>
+              </View>
+              <Icon name={icons.chevronRight} color={theme.tertiaryText} size={14} />
+            </Surface>
+          </Pressable>
         ) : result ? (
           <Surface style={styles.resultCard}>
             <View style={{ flex: 1 }}>
@@ -449,6 +482,18 @@ function Surface({ style, ...props }: React.ComponentProps<typeof View>) {
   const theme = useTheme();
   if (liquidGlass) return <GlassView style={style} {...props} />;
   return <View style={[style, cardStyle(theme)]} {...props} />;
+}
+
+/** Its collections and how many todos it has, e.g. "Favorites, Food · 2 todos". */
+function describePlace(place: MapPlace, collections: Collection[]): string {
+  const names = placeCollections(place, collections).map((c) => c.name);
+  const todos = place.todos.length;
+  return [
+    names.length > 0 ? names.join(', ') : 'Not saved',
+    todos > 0 ? `${todos} ${todos === 1 ? 'todo' : 'todos'}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
 }
 
 function toCoordinate(p: Coordinate): Coordinate {

@@ -35,7 +35,23 @@ export default function RootLayout() {
               name="place/new"
               options={{ presentation: 'modal', title: 'New Place' }}
             />
-            <Stack.Screen name="place/[id]" options={{ presentation: 'modal', title: '' }} />
+            <Stack.Screen
+              name="place/[id]"
+              options={{
+                presentation: 'formSheet',
+                headerShown: false,
+                sheetAllowedDetents: [0.5, 1],
+                sheetGrabberVisible: true,
+              }}
+            />
+            <Stack.Screen
+              name="place/edit/[id]"
+              options={{ presentation: 'modal', title: 'Edit Place' }}
+            />
+            <Stack.Screen
+              name="place/todo"
+              options={{ presentation: 'modal', title: 'New Todo' }}
+            />
             <Stack.Screen
               name="place/reminder/[id]"
               options={{ presentation: 'modal', title: '' }}

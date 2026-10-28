@@ -3,6 +3,7 @@
   "version": "1.0.0",
   "main": "index.ts",
   "dependencies": {
+    "@expo/ui": "~58.0.24",
     "@react-native-community/datetimepicker": "9.2.1",
     "expo": "~58.0.20",
     "expo-calendar": "~58.0.6",

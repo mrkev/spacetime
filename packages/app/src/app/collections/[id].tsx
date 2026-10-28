@@ -6,18 +6,22 @@ import { ColorSwatches } from '../../components/ColorSwatches';
 import { Field, Row, Section } from '../../components/Form';
 import { HeaderButton } from '../../components/HeaderButton';
 import { PIN_COLORS, useTheme } from '../../lib/theme';
+import { addToCollection, findMapPlace, useMapPlaces } from '../../space/places';
 import {
   REMINDERS_COLLECTION_ID,
   addCollection,
   deleteCollection,
+  placesOnlyIn,
   updateCollection,
   useSpaceState,
 } from '../../space/store';
 
 export default function EditCollectionScreen() {
   const theme = useTheme();
-  const { id } = useLocalSearchParams<{ id: string }>();
-  const { collections, places } = useSpaceState();
+  // `placeId` is a place to add a new collection to.
+  const { id, placeId } = useLocalSearchParams<{ id: string; placeId?: string }>();
+  const { collections } = useSpaceState();
+  const mapPlaces = useMapPlaces();
   const existing = collections.find((c) => c.id === id);
   const isNew = !existing;
   const isReminders = id === REMINDERS_COLLECTION_ID;
@@ -31,17 +35,21 @@ export default function EditCollectionScreen() {
     const trimmed = name.trim();
     if (!trimmed) return;
     if (existing) updateCollection(existing.id, { name: trimmed, color });
-    else addCollection(trimmed, color);
+    else {
+      const added = addCollection(trimmed, color);
+      const place = placeId ? findMapPlace(mapPlaces, placeId) : null;
+      if (place) addToCollection(place, added.id);
+    }
     router.back();
   };
 
   const confirmDelete = () => {
     if (!existing) return;
-    const count = places.filter((p) => p.collectionId === existing.id).length;
+    const count = placesOnlyIn(existing.id).length;
     Alert.alert(
       `Delete “${existing.name}”?`,
       count > 0
-        ? `This also deletes ${count} saved ${count === 1 ? 'place' : 'places'}.`
+        ? `This also deletes ${count === 1 ? 'a place' : `${count} places`} that ${count === 1 ? 'isn’t' : 'aren’t'} in any other collection.`
         : undefined,
       [
         { text: 'Cancel', style: 'cancel' },
@@ -67,6 +75,10 @@ export default function EditCollectionScreen() {
       <Stack.Screen
         options={{
           title: isNew ? 'New Collection' : existing.name,
+          // Opened straight from a place, with nothing to go back to.
+          headerLeft: placeId
+            ? () => <HeaderButton label="Cancel" color={theme.blue} onPress={() => router.back()} />
+            : undefined,
           headerRight: () => (
             <HeaderButton
               label={isNew ? 'Add' : 'Save'}

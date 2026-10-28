@@ -5,15 +5,14 @@ import { Section, Separator } from '../../components/Form';
 import { HeaderButton } from '../../components/HeaderButton';
 import { Icon, icons } from '../../components/Icon';
 import { useTheme } from '../../lib/theme';
-import { useLocationReminders } from '../../space/locationReminders';
+import { isInCollection, useMapPlaces } from '../../space/places';
 import { REMINDERS_COLLECTION_ID, useSpaceState } from '../../space/store';
 
 export default function CollectionsScreen() {
   const theme = useTheme();
-  const { collections, places } = useSpaceState();
-  const reminderCount = useLocationReminders().length;
-  const counts = new Map<string, number>([[REMINDERS_COLLECTION_ID, reminderCount]]);
-  for (const p of places) counts.set(p.collectionId, (counts.get(p.collectionId) ?? 0) + 1);
+  const { collections } = useSpaceState();
+  const mapPlaces = useMapPlaces();
+  const count = (id: string) => mapPlaces.filter((p) => isInCollection(p, id)).length;
 
   const reminders = collections.filter((c) => c.id === REMINDERS_COLLECTION_ID);
   const others = collections.filter((c) => c.id !== REMINDERS_COLLECTION_ID);
@@ -38,9 +37,7 @@ export default function CollectionsScreen() {
           <Text style={[styles.name, { color: theme.text }]} numberOfLines={1}>
             {collection.name}
           </Text>
-          <Text style={[styles.count, { color: theme.secondaryText }]}>
-            {counts.get(collection.id) ?? 0}
-          </Text>
+          <Text style={[styles.count, { color: theme.secondaryText }]}>{count(collection.id)}</Text>
           <Icon name={icons.chevronRight} color={theme.tertiaryText} size={14} />
         </Pressable>
       </View>
@@ -67,7 +64,7 @@ export default function CollectionsScreen() {
           ),
         }}
       />
-      <Section footer="Reminders with a location, from any list in the Reminders app. Reminders notifies you when you arrive at or leave them.">
+      <Section footer="Places with todos: reminders with a location, from any list in the Reminders app. Reminders notifies you when you arrive at or leave them.">
         {renderRows(reminders)}
       </Section>
       <Section title="My Maps">

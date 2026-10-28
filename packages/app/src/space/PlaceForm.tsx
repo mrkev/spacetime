@@ -1,29 +1,14 @@
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import MapView, { Circle, Marker } from 'react-native-maps';
 
 import { Field, Section, Segmented, Separator } from '../components/Form';
 import { Icon, icons } from '../components/Icon';
 import { describeCoordinate, searchPlaces, type Coordinate } from '../lib/geo';
-import { useTheme, withAlpha } from '../lib/theme';
-import { useCalendar } from '../time/CalendarProvider';
-import {
-  createLocationReminder,
-  updateLocationReminder,
-  type LocationReminder,
-  type LocationReminderInput,
-  type ReminderTrigger,
-} from './locationReminders';
-import {
-  REMINDERS_COLLECTION_ID,
-  addPlace,
-  deletePlace,
-  updatePlace,
-  type Collection,
-  type Place,
-  type PlaceInput,
-} from './store';
+import { PIN_OFFSET, useTheme, withAlpha } from '../lib/theme';
+import type { ReminderTrigger } from './locationReminders';
 import { loadMapRegion } from './mapRegion';
+import { REMINDERS_COLLECTION_ID, type Collection } from './store';
 
 export const RADIUS_OPTIONS = [
   { label: '100 m', value: 100 },
@@ -32,175 +17,60 @@ export const RADIUS_OPTIONS = [
   { label: '1 km', value: 1000 },
 ];
 
-/** The fields only location reminders have. */
-export type ReminderFields = { title: string; trigger: ReminderTrigger; radius: number };
-
-const DEFAULT_REMINDER: ReminderFields = { title: '', trigger: 'arrive', radius: 250 };
 /** How far around the current pin (in degrees, about 5 km) search looks first. */
 const SEARCH_DELTA = 0.05;
 
-export type PlaceFormState = {
-  coordinate: Coordinate | null;
-  name: string;
-  address: string;
-  notes: string;
-  collectionId: string;
-  reminder: ReminderFields;
-};
+export type LocationState = { coordinate: Coordinate | null; name: string; address: string };
 
-export function usePlaceForm(initial: Partial<PlaceFormState> & { collectionId: string }) {
-  const { remindersStatus, requestAccess } = useCalendar();
-  const [state, setState] = useState<PlaceFormState>({
-    coordinate: null,
-    name: '',
-    address: '',
-    notes: '',
-    ...initial,
-    reminder: { ...DEFAULT_REMINDER, ...initial.reminder },
-  });
-  const update = (changes: Partial<PlaceFormState>) => setState((s) => ({ ...s, ...changes }));
-  const updateReminder = (changes: Partial<ReminderFields>) =>
-    setState((s) => ({ ...s, reminder: { ...s.reminder, ...changes } }));
-
-  const isReminder = state.collectionId === REMINDERS_COLLECTION_ID;
-  // Location reminders are saved in Reminders, so ask for access as soon as one is being made.
-  useEffect(() => {
-    if (isReminder && remindersStatus === 'undetermined') requestAccess();
-  }, [isReminder, remindersStatus, requestAccess]);
-  const canSave =
-    !!state.coordinate &&
-    (isReminder ? !!(state.reminder.title.trim() || state.name.trim()) : !!state.name.trim());
-
-  return { state, update, updateReminder, isReminder, canSave };
-}
-
-export type PlaceForm = ReturnType<typeof usePlaceForm>;
-
-function placeName(state: PlaceFormState) {
+/** The name given to a place saved without one. */
+export function placeName(state: Pick<LocationState, 'name'>) {
   return state.name.trim() || 'Dropped Pin';
 }
 
-function toPlaceInput(state: PlaceFormState): PlaceInput {
-  return {
-    collectionId: state.collectionId,
-    name: placeName(state),
-    address: state.address || undefined,
-    notes: state.notes.trim() || undefined,
-    latitude: state.coordinate!.latitude,
-    longitude: state.coordinate!.longitude,
-  };
-}
-
-/** A reminder saved without a title is titled after its place, like in Reminders. */
-function toLocationReminderInput(state: PlaceFormState): LocationReminderInput {
-  return {
-    title: state.reminder.title.trim() || placeName(state),
-    placeName: placeName(state),
-    address: state.address || undefined,
-    notes: state.notes.trim() || undefined,
-    latitude: state.coordinate!.latitude,
-    longitude: state.coordinate!.longitude,
-    trigger: state.reminder.trigger,
-    radius: state.reminder.radius,
-  };
-}
-
-/** What the form is editing: a saved place, a location reminder, or (if neither) something new. */
-export type PlaceFormOriginal =
-  { kind: 'place'; place: Place } | { kind: 'reminder'; reminder: LocationReminder };
-
 /**
- * Saves the form as a place or, in the Reminders collection, a location reminder, moving it from
- * one to the other if its collection changed. Resolves false if it couldn't be saved.
+ * Where a place is: a search field, a map with a pin, and its name. The pin can be dragged unless
+ * `fixed`, and a todo's radius is drawn around it.
  */
-export function useSavePlaceForm() {
-  const { remindersStatus, defaultReminderList, refresh } = useCalendar();
-
-  return async (state: PlaceFormState, original?: PlaceFormOriginal): Promise<boolean> => {
-    try {
-      if (state.collectionId !== REMINDERS_COLLECTION_ID) {
-        const input = toPlaceInput(state);
-        if (original?.kind === 'place') updatePlace(original.place.id, input);
-        else addPlace(input);
-        if (original?.kind === 'reminder') {
-          await original.reminder.reminder.source.delete();
-          refresh();
-        }
-        return true;
-      }
-
-      const input = toLocationReminderInput(state);
-      if (original?.kind === 'reminder') {
-        await updateLocationReminder(original.reminder, input);
-      } else {
-        const list = defaultReminderList();
-        if (!list) {
-          Alert.alert(
-            'Can’t Save Reminder',
-            remindersStatus === 'granted'
-              ? 'Add a list in Reminders to save location reminders.'
-              : 'Location reminders are saved in Reminders. Allow access to Reminders in Settings.',
-            remindersStatus === 'granted'
-              ? undefined
-              : [
-                  { text: 'Not Now', style: 'cancel' },
-                  { text: 'Open Settings', onPress: () => Linking.openSettings() },
-                ],
-          );
-          return false;
-        }
-        await createLocationReminder(list, input);
-        if (original?.kind === 'place') deletePlace(original.place.id);
-      }
-      refresh();
-      return true;
-    } catch (error) {
-      Alert.alert('Couldn’t Save', String(error));
-      return false;
-    }
-  };
-}
-
-export function PlaceFormFields({
-  form,
-  collections,
-  footer,
+export function LocationFields({
+  state,
+  update,
+  color,
+  radius,
+  radiusColor,
+  fixed = false,
 }: {
-  form: PlaceForm;
-  collections: Collection[];
-  footer?: React.ReactNode;
+  state: LocationState;
+  update: (changes: Partial<LocationState>) => void;
+  color: string;
+  radius?: number;
+  radiusColor?: string;
+  fixed?: boolean;
 }) {
   const theme = useTheme();
-  const { state, update, updateReminder, isReminder } = form;
   const [query, setQuery] = useState('');
   const [searching, setSearching] = useState(false);
   const mapRef = useRef<MapView>(null);
-  const reminderColor =
-    collections.find((c) => c.id === REMINDERS_COLLECTION_ID)?.color ?? theme.tint;
-  const color = collections.find((c) => c.id === state.collectionId)?.color ?? theme.tint;
 
   // Fill in the name and address for a new pin.
   const resolveAddress = async (coordinate: Coordinate, overwriteName: boolean) => {
     const described = await describeCoordinate(coordinate);
     if (!described) return;
-    form.update({ address: described.address });
-    if (overwriteName) form.update({ name: described.name });
+    update(overwriteName ? described : { address: described.address });
   };
 
   useEffect(() => {
-    if (state.coordinate && !state.address) resolveAddress(state.coordinate, !state.name);
+    if (state.coordinate && !state.address && !fixed) {
+      resolveAddress(state.coordinate, !state.name);
+    }
     // Only on first mount; later moves are handled by onDragEnd.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (state.coordinate) {
-      mapRef.current?.animateToRegion({
-        ...state.coordinate,
-        ...regionSpan(isReminder ? state.reminder.radius : 0),
-      });
+      mapRef.current?.animateToRegion({ ...state.coordinate, ...regionSpan(radius ?? 0) });
     }
-  }, [state.coordinate, isReminder, state.reminder.radius]);
+  }, [state.coordinate, radius]);
 
   const runSearch = async () => {
     setSearching(true);
@@ -222,11 +92,11 @@ export function PlaceFormFields({
       <Section
         footer={
           state.coordinate
-            ? state.address || 'Drag the pin to adjust the location.'
+            ? state.address || (fixed ? undefined : 'Drag the pin to adjust the location.')
             : 'Search for a place or address, or long-press the map in Space.'
         }
       >
-        {!state.coordinate || query ? (
+        {!fixed && (!state.coordinate || query) ? (
           <View style={styles.searchRow}>
             <Icon name={icons.search} color={theme.secondaryText} size={16} />
             <Field
@@ -245,124 +115,156 @@ export function PlaceFormFields({
           <MapView
             ref={mapRef}
             style={styles.preview}
-            initialRegion={{
-              ...state.coordinate,
-              ...regionSpan(isReminder ? state.reminder.radius : 0),
-            }}
+            initialRegion={{ ...state.coordinate, ...regionSpan(radius ?? 0) }}
             pitchEnabled={false}
             rotateEnabled={false}
+            scrollEnabled={!fixed}
+            zoomEnabled={!fixed}
             toolbarEnabled={false}
           >
             <Marker
               key={color}
               coordinate={state.coordinate}
               pinColor={color}
-              draggable
+              centerOffset={PIN_OFFSET}
+              draggable={!fixed}
               onDragEnd={(e) => {
                 const coordinate = e.nativeEvent.coordinate;
                 update({ coordinate, address: '' });
                 resolveAddress(coordinate, false);
               }}
             />
-            {isReminder ? (
+            {radius && radiusColor ? (
               <Circle
-                key={`${reminderColor}:${state.reminder.radius}`}
+                key={`${radiusColor}:${radius}`}
                 center={state.coordinate}
-                radius={state.reminder.radius}
-                strokeColor={withAlpha(reminderColor, 0.8)}
-                fillColor={withAlpha(reminderColor, 0.15)}
+                radius={radius}
+                strokeColor={withAlpha(radiusColor, 0.8)}
+                fillColor={withAlpha(radiusColor, 0.15)}
               />
             ) : null}
           </MapView>
         ) : null}
       </Section>
 
-      <Section>
-        {isReminder ? (
-          <>
-            <Field
-              placeholder="Remind me to…"
-              value={state.reminder.title}
-              onChangeText={(title) => updateReminder({ title })}
-            />
-            <Separator />
-          </>
-        ) : null}
-        <Field
-          placeholder="Place name"
-          value={state.name}
-          onChangeText={(name) => update({ name })}
-        />
-      </Section>
+      {fixed ? null : (
+        <Section>
+          <Field
+            placeholder="Place name"
+            value={state.name}
+            onChangeText={(name) => update({ name })}
+          />
+        </Section>
+      )}
+    </>
+  );
+}
 
-      <Section title="Collection">
-        <View style={styles.collections}>
-          {collections.map((collection) => {
-            const selected = collection.id === state.collectionId;
+/** Picks any number of collections, in the order they're picked. */
+export function CollectionPicker({
+  collections,
+  value,
+  onChange,
+  footer,
+}: {
+  collections: Collection[];
+  value: string[];
+  onChange: (collectionIds: string[]) => void;
+  footer?: string;
+}) {
+  const theme = useTheme();
+  return (
+    <Section title="Collections" footer={footer}>
+      <View style={styles.collections}>
+        {collections
+          .filter((c) => c.id !== REMINDERS_COLLECTION_ID)
+          .map((collection) => {
+            const selected = value.includes(collection.id);
             return (
               <Pressable
                 key={collection.id}
-                onPress={() => update({ collectionId: collection.id })}
+                onPress={() =>
+                  onChange(
+                    selected
+                      ? value.filter((id) => id !== collection.id)
+                      : [...value, collection.id],
+                  )
+                }
                 style={[
                   styles.collectionChip,
                   { borderColor: collection.color },
                   selected && { backgroundColor: collection.color },
                 ]}
-                accessibilityRole="radio"
-                accessibilityState={{ selected }}
+                accessibilityRole="checkbox"
+                accessibilityState={{ checked: selected }}
               >
-                {collection.id === REMINDERS_COLLECTION_ID ? (
-                  <Icon name={icons.bell} size={12} color={selected ? '#fff' : collection.color} />
-                ) : null}
+                {selected ? <Icon name={icons.check} size={12} color="#fff" /> : null}
                 <Text style={[styles.collectionLabel, { color: selected ? '#fff' : theme.text }]}>
                   {collection.name}
                 </Text>
               </Pressable>
             );
           })}
-        </View>
-      </Section>
+      </View>
+    </Section>
+  );
+}
 
-      {isReminder ? (
-        <Section
-          title="Remind Me"
-          footer={`Saved in Reminders, which notifies you when you ${
-            state.reminder.trigger === 'arrive' ? 'arrive' : 'leave'
-          }.`}
-        >
+/** What a todo (a location reminder) has besides its place. */
+export type TodoState = { title: string; trigger: ReminderTrigger; radius: number; notes: string };
+
+export const DEFAULT_TODO: TodoState = { title: '', trigger: 'arrive', radius: 250, notes: '' };
+
+export function TodoFields({
+  todo,
+  update,
+  optional = false,
+}: {
+  todo: TodoState;
+  update: (changes: Partial<TodoState>) => void;
+  /** Hides the trigger until there's a title, for a form where the todo is optional. */
+  optional?: boolean;
+}) {
+  const showTrigger = !optional || !!todo.title.trim();
+  return (
+    <Section
+      title="Todo"
+      footer={
+        showTrigger
+          ? `Saved in Reminders, which notifies you when you ${todo.trigger}.`
+          : 'Optional. Saved in Reminders, which notifies you when you get there.'
+      }
+    >
+      <Field
+        placeholder="Remind me to…"
+        value={todo.title}
+        onChangeText={(title) => update({ title })}
+      />
+      {showTrigger ? (
+        <>
+          <Separator />
           <Segmented<ReminderTrigger>
             options={[
               { label: 'When Arriving', value: 'arrive' },
               { label: 'When Leaving', value: 'leave' },
             ]}
-            value={state.reminder.trigger}
-            onChange={(trigger) => updateReminder({ trigger })}
+            value={todo.trigger}
+            onChange={(trigger) => update({ trigger })}
           />
           <Separator />
           <Segmented<number>
             options={RADIUS_OPTIONS}
-            value={state.reminder.radius}
-            onChange={(radius) => updateReminder({ radius })}
+            value={todo.radius}
+            onChange={(radius) => update({ radius })}
           />
-        </Section>
+        </>
       ) : null}
-
-      <Section title="Notes">
-        <Field
-          placeholder="Notes"
-          value={state.notes}
-          onChangeText={(notes) => update({ notes })}
-          multiline
-        />
-      </Section>
-
-      {footer}
-    </>
+    </Section>
   );
 }
 
 /** A map span that comfortably fits a geofence of the given radius. */
-function regionSpan(radius: number) {
+export function regionSpan(radius: number) {
   const meters = Math.max(400, radius * 3.2);
   const delta = meters / 111_000;
   return { latitudeDelta: delta, longitudeDelta: delta };

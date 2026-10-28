@@ -54,6 +54,13 @@ export const PIN_COLORS = [
   '#8E8E93', // gray
 ];
 
+/**
+ * Puts a marker balloon's tip on its coordinate. MapKit offsets MKMarkerAnnotationView by this
+ * much itself, but react-native-maps overwrites it with the `centerOffset` prop, which defaults
+ * to zero and centers the balloon on the coordinate instead.
+ */
+export const PIN_OFFSET = { x: 0, y: -14 };
+
 /** Appends an alpha channel to a #RRGGBB color. */
 export function withAlpha(hex: string, alpha: number): string {
   const normalized = normalizeHex(hex);

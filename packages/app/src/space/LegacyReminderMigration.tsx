@@ -2,7 +2,7 @@ import { useEffect } from 'react';
 
 import { useCalendar } from '../time/CalendarProvider';
 import { createLocationReminder } from './locationReminders';
-import { REMINDERS_COLLECTION_ID, deletePlace, useSpaceState } from './store';
+import { deletePlace, isLegacyReminder, useSpaceState } from './store';
 
 // Once per launch, so a reminder that can't be moved isn't retried on every render.
 let attempted = false;
@@ -14,7 +14,7 @@ let attempted = false;
 export function LegacyReminderMigration() {
   const { places } = useSpaceState();
   const { remindersStatus, requestAccess, defaultReminderList, refresh } = useCalendar();
-  const legacy = places.filter((p) => p.collectionId === REMINDERS_COLLECTION_ID);
+  const legacy = places.filter(isLegacyReminder);
   const list = remindersStatus === 'granted' ? defaultReminderList() : null;
 
   useEffect(() => {

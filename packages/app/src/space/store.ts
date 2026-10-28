@@ -4,8 +4,8 @@ import { useSyncExternalStore } from 'react';
 import { createId } from '../lib/id';
 
 /**
- * The built-in collection of location reminders. Its places are reminders in Apple Reminders (see
- * `locationReminders.ts`); only its name and color are stored here.
+ * The built-in collection of places with todos, which are location reminders in Apple Reminders
+ * (see `locationReminders.ts`). Places can't be added to it; only its name and color are stored.
  */
 export const REMINDERS_COLLECTION_ID = 'reminders';
 
@@ -24,9 +24,11 @@ export type LegacyReminder = {
   enabled: boolean;
 };
 
+/** A saved place: one that's in at least one collection. */
 export type Place = {
   id: string;
-  collectionId: string;
+  /** In the order the user sorted them. The first one colors the place's pin. */
+  collectionIds: string[];
   name: string;
   address?: string;
   notes?: string;
@@ -36,6 +38,11 @@ export type Place = {
   /** Only on places saved in the Reminders collection by older versions, until they're moved. */
   reminder?: LegacyReminder;
 };
+
+/** A place in the Reminders collection, from before location reminders moved to Apple Reminders. */
+export function isLegacyReminder(place: Place): boolean {
+  return place.collectionIds.includes(REMINDERS_COLLECTION_ID);
+}
 
 export type SpaceState = {
   collections: Collection[];
@@ -64,6 +71,13 @@ function load(): SpaceState {
       if (!parsed.collections.some((c) => c.id === REMINDERS_COLLECTION_ID)) {
         parsed.collections.unshift(seed().collections[0]);
       }
+      // Places used to be in a single collection.
+      parsed.places = parsed.places.map(
+        ({ collectionId, ...place }: Place & { collectionId?: string }) =>
+          place.collectionIds
+            ? place
+            : { ...place, collectionIds: collectionId ? [collectionId] : [] },
+      );
       return parsed;
     }
   } catch (error) {
@@ -113,13 +127,25 @@ export function updateCollection(id: string, changes: Partial<Pick<Collection, '
   });
 }
 
-/** Deletes a collection and every place in it. The Reminders collection can't be deleted. */
+/**
+ * Deletes a collection, and the places that were only in it. The Reminders collection can't be
+ * deleted.
+ */
 export function deleteCollection(id: string) {
   if (id === REMINDERS_COLLECTION_ID) return;
   setState({
     collections: state.collections.filter((c) => c.id !== id),
-    places: state.places.filter((p) => p.collectionId !== id),
+    places: state.places.flatMap((p) => {
+      if (!p.collectionIds.includes(id)) return [p];
+      const collectionIds = p.collectionIds.filter((c) => c !== id);
+      return collectionIds.length > 0 ? [{ ...p, collectionIds }] : [];
+    }),
   });
+}
+
+/** The places that are only in this collection, which deleting it deletes. */
+export function placesOnlyIn(id: string): Place[] {
+  return state.places.filter((p) => p.collectionIds.length === 1 && p.collectionIds[0] === id);
 }
 
 // Places
@@ -132,7 +158,12 @@ export function addPlace(input: PlaceInput): Place {
   return place;
 }
 
+/** Updates a place. Taking it out of every collection deletes it. */
 export function updatePlace(id: string, changes: Partial<PlaceInput>) {
+  if (changes.collectionIds?.length === 0) {
+    deletePlace(id);
+    return;
+  }
   setState({
     ...state,
     places: state.places.map((p) => (p.id === id ? { ...p, ...changes } : p)),
