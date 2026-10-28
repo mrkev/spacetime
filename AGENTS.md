@@ -31,13 +31,39 @@ Run lint and typecheck before declaring any task done.
 - Import `Link`, `router`, and `useLocalSearchParams` from `expo-router`.
 - Docs: https://docs.expo.dev/router/introduction.md
 
-## Building with EAS
+## Building and installing on the phone
 
-Use EAS to build, sign, and submit the app in the cloud (`eas build`, `eas submit`) and to ship over-the-air updates (`eas update`) — no local Xcode or Android Studio required. Run EAS CLI as `pnpm dlx eas-cli@latest <command>` from `packages/app/`; substitute that for bare `eas` in docs examples.
-Docs: https://docs.expo.dev/eas/index.md
+The app is only built for iOS, locally with Xcode, and installed on the user's iPhone. EAS isn't set up (there's no `eas.json`). Don't use `pnpm expo run:ios --device` or `eas build` for this: `expo run:ios` makes a Debug build that loads its JavaScript from Metro on this Mac, so it stops working as soon as Metro isn't running. Make a Release build, which has the JavaScript bundled in, and install it with `devicectl`.
+
+The user tests on the phone. When it's connected, build and install after making changes; don't run simulator or UI tests unless asked.
+
+From `packages/app/`:
+
+```bash
+# 1. Only if ios/ is missing, or after changing app.json, a dependency with native code, or a
+#    patch in patches/ that touches native code. --clean deletes and regenerates ios/.
+CI=1 pnpm expo prebuild --clean --platform ios
+
+# 2. Release build for a device (takes a few minutes; signing is automatic).
+xcodebuild -workspace ios/Spacetime.xcworkspace -scheme Spacetime -configuration Release \
+  -destination 'generic/platform=iOS' -derivedDataPath ios/build \
+  -allowProvisioningUpdates -allowProvisioningDeviceRegistration build
+
+# 3. Find the phone ("Change My Mind", an iPhone 13; its identifier is
+#    765FE281-0AD8-57F9-B998-22816F0CD00A). It's connected if it's listed as available.
+xcrun devicectl list devices
+
+# 4. Install, then launch.
+xcrun devicectl device install app --device 765FE281-0AD8-57F9-B998-22816F0CD00A \
+  ios/build/Build/Products/Release-iphoneos/Spacetime.app
+xcrun devicectl device process launch --terminate-existing \
+  --device 765FE281-0AD8-57F9-B998-22816F0CD00A com.mrkev.spacetime
+```
+
+Launching fails with "Locked" if the phone is locked; the app is still installed, so just tell the user to open it.
 
 ## Rules
 
 - If `ios/` and `android/` directories do not exist, they are generated (Continuous Native Generation). Never create or edit them by hand — configure native behavior in `app.json` and config plugins.
-- Expo Go only includes its bundled native modules. After adding a library with native code, the app needs a development build: `pnpm expo run:ios|android` locally, or `eas build --profile development`.
+- Expo Go only includes its bundled native modules, and this app needs native code it doesn't have, so it doesn't run in Expo Go. After adding a library with native code, prebuild and rebuild as described above.
 - Prefer recommended Expo modules over third-party libraries, and check your available skills before adding dependencies. Docs: https://docs.expo.dev/versions/latest/index.md
