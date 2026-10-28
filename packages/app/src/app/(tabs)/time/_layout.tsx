@@ -4,7 +4,7 @@ import { useTheme } from '../../../lib/theme';
 
 // The year view is the base of the calendar: the month view opens on top of it (see
 // `openTimeTab`), so back and swipe-back go up to the year, like Calendar.
-export const unstable_settings = { initialRouteName: 'year' };
+export const unstable_settings = { anchor: 'year' };
 
 export default function TimeLayout() {
   const theme = useTheme();
