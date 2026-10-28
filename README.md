@@ -7,12 +7,14 @@ A React Native (Expo SDK 58) app with two tabs:
 
 ## Running
 
-The app uses native modules that Expo Go doesn't include (such as a patched expo-calendar), so it runs as a development build:
+The app uses native modules that Expo Go doesn't include (such as a patched expo-calendar), so it has to be built with Xcode. It's meant to run on an iPhone: build it in Release, which bundles the JavaScript so the app works without Metro running, and install it with `devicectl`. The steps are in [AGENTS.md](AGENTS.md#building-and-installing-on-the-phone).
+
+For quick iteration in the Simulator, there's also a development build that loads its JavaScript from Metro:
 
 ```sh
 pnpm install
-pnpm ios           # builds and launches in the iOS Simulator (needs Xcode)
-pnpm start         # start Metro for an already-installed dev build
+pnpm ios           # builds a Debug build and launches it in the iOS Simulator
+pnpm start         # start Metro for an already-installed Debug build
 ```
 
 Other scripts: `pnpm typecheck`, `pnpm lint`, `pnpm test`, `pnpm format`.
@@ -44,4 +46,3 @@ src/components/, src/lib/    Shared UI and helpers
 - **Reminders**, dated or located, live in Apple Reminders, so they sync and show up in Reminders, on the Mac, and on the Watch. A location reminder is a reminder with a location alarm; Reminders (not Spacetime) watches the location and notifies you, so Spacetime only needs location access while it's open. Location reminders made in the Reminders app show up on the map too.
 - **Reminder metadata** Reminders has no field for (for now, a location reminder's address) is kept on-device in `src/time/reminderMeta.ts`, keyed by the reminder's external ID (the same on every device) with its local ID as a fallback, and dropped once the reminder is deleted.
 - Places are stored on-device only. iOS is the only supported platform.
-- Android maps need a Google Maps API key; see the [react-native-maps docs](https://docs.expo.dev/versions/v58.0.0/sdk/map-view/).
