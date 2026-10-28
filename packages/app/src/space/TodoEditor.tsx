@@ -1,5 +1,5 @@
 import { Stack, router } from 'expo-router';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Alert, Linking, ScrollView } from 'react-native';
 
 import { Field, Row, Section, Separator } from '../components/Form';
@@ -62,9 +62,12 @@ export function useRemindersAccess(needed: boolean) {
 export function TodoEditor({
   existing,
   place,
+  header,
 }: {
   existing?: LocationReminder;
   place: MapPlace | null;
+  /** Shown above the form. */
+  header?: ReactNode;
 }) {
   const theme = useTheme();
   const { collections } = useSpaceState();
@@ -168,7 +171,7 @@ export function TodoEditor({
     >
       <Stack.Screen
         options={{
-          title: existing ? 'Todo' : 'New Todo',
+          title: existing ? 'Todo' : 'Add to Reminder',
           headerLeft: () => <HeaderButton label="Cancel" onPress={() => router.back()} />,
           headerRight: () => (
             <HeaderButton
@@ -180,6 +183,7 @@ export function TodoEditor({
           ),
         }}
       />
+      {header}
       <TodoFields todo={todo} update={(changes) => setTodo((t) => ({ ...t, ...changes }))} />
       <LocationFields
         state={location}

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react';
 import {
+  ActivityIndicator,
   Pressable,
   StyleSheet,
   Switch,
@@ -10,6 +11,7 @@ import {
 } from 'react-native';
 
 import { useTheme } from '../lib/theme';
+import { Icon, icons } from './Icon';
 
 /** An inset grouped section, like iOS Settings. */
 export function Section({
@@ -96,6 +98,65 @@ export function Row({
   );
 }
 
+/** A search field for the top of a section, with a spinner while `searching`. */
+export function SearchRow({
+  searching = false,
+  ...props
+}: TextInputProps & { searching?: boolean }) {
+  const theme = useTheme();
+  return (
+    <View style={styles.searchRow}>
+      <Icon name={icons.search} color={theme.secondaryText} size={16} />
+      <Field
+        style={styles.searchField}
+        returnKeyType="search"
+        autoCorrect={false}
+        clearButtonMode="while-editing"
+        {...props}
+      />
+      {searching ? <ActivityIndicator /> : null}
+    </View>
+  );
+}
+
+/** A row to pick from a list: a colored dot, a title and subtitle, and a check if `checked`. */
+export function PickRow({
+  title,
+  subtitle,
+  color,
+  checked = false,
+  onPress,
+}: {
+  title: string;
+  subtitle?: string;
+  color?: string;
+  checked?: boolean;
+  onPress: () => void;
+}) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      style={({ pressed }) => [styles.pickRow, pressed && { backgroundColor: theme.fill }]}
+      accessibilityRole="button"
+      accessibilityState={{ selected: checked }}
+    >
+      {color ? <View style={[styles.dot, { backgroundColor: color }]} /> : null}
+      <View style={styles.pickText}>
+        <Text style={[styles.pickTitle, { color: theme.text }]} numberOfLines={2}>
+          {title}
+        </Text>
+        {subtitle ? (
+          <Text style={[styles.pickSubtitle, { color: theme.secondaryText }]} numberOfLines={1}>
+            {subtitle}
+          </Text>
+        ) : null}
+      </View>
+      {checked ? <Icon name={icons.check} color={theme.blue} size={16} weight="semibold" /> : null}
+    </Pressable>
+  );
+}
+
 export function SwitchRow({
   label,
   value,
@@ -167,6 +228,20 @@ const styles = StyleSheet.create({
   rowLabel: { fontSize: 17, flexShrink: 0 },
   rowValue: { fontSize: 17, flex: 1, textAlign: 'right' },
   spacer: { flex: 1 },
+  searchRow: { flexDirection: 'row', alignItems: 'center', paddingLeft: 14, paddingRight: 12 },
+  searchField: { flex: 1, paddingHorizontal: 8 },
+  pickRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    minHeight: 44,
+    paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  dot: { width: 12, height: 12, borderRadius: 6 },
+  pickText: { flex: 1 },
+  pickTitle: { fontSize: 17 },
+  pickSubtitle: { fontSize: 13, marginTop: 1 },
   segmented: { flexDirection: 'row', borderRadius: 8, padding: 2, margin: 8 },
   segment: { flex: 1, paddingVertical: 6, alignItems: 'center', borderRadius: 7 },
   segmentSelected: {

@@ -79,7 +79,9 @@ export function useLocationReminders(): LocationReminder[] {
   );
 }
 
-function toAlarm(input: LocationReminderInput): Calendar.Alarm {
+function toAlarm(
+  input: Pick<LocationReminderInput, 'placeName' | 'trigger' | 'radius' | 'latitude' | 'longitude'>,
+): Calendar.Alarm {
   return {
     structuredLocation: {
       title: input.placeName,
@@ -126,6 +128,33 @@ export async function updateLocationReminder(
   );
   const ref = { id: existing.id, externalId: existing.reminder.externalId };
   setReminderMeta(ref, { ...getReminderMeta(ref), address: input.address });
+}
+
+/**
+ * Gives a reminder a location: a place it reminds you at, replacing any it had. It keeps its trigger
+ * and radius if it had a location, or else gets `defaults`.
+ */
+export async function moveReminderTo(
+  reminder: CalendarReminder,
+  place: Coordinate & { name: string; address?: string },
+  defaults: Pick<LocationReminderInput, 'trigger' | 'radius'>,
+): Promise<void> {
+  const { source } = reminder;
+  const located = toLocationReminder(reminder);
+  const alarm = toAlarm({
+    placeName: place.name,
+    latitude: place.latitude,
+    longitude: place.longitude,
+    trigger: located?.trigger ?? defaults.trigger,
+    radius: located?.radius ?? defaults.radius,
+  });
+  // Bare native objects, as in updateLocationReminder.
+  const update = source.update as (details: Record<string, unknown>) => Promise<void>;
+  await update.call(source, {
+    alarms: [...(source.alarms ?? []).filter((a) => !isLocated(a)), alarm],
+  });
+  const ref = { id: reminder.key, externalId: reminder.externalId };
+  setReminderMeta(ref, { ...getReminderMeta(ref), address: place.address });
 }
 
 export function describeTrigger(reminder: Pick<LocationReminder, 'trigger' | 'radius'>): string {

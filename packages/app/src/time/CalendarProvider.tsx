@@ -78,6 +78,8 @@ type CalendarContextValue = {
    * soonest first.
    */
   upcomingEvents: CalendarEvent[];
+  /** The next occurrence of every event in the coming `UPCOMING_DAYS`, soonest first. */
+  listUpcomingEvents: () => Promise<CalendarEvent[]>;
   reminderLists: Calendar.ExpoCalendar[];
   /** The list new reminders go into by default. */
   defaultReminderList: () => Calendar.ExpoCalendar | null;
@@ -158,12 +160,12 @@ async function fetchUpcomingEvents(calendars: Calendar.ExpoCalendar[]) {
   return Calendar.listEvents(calendars, now, addDays(startOfDay(now), UPCOMING_DAYS + 1));
 }
 
-/** The next occurrence of each event that has a place, soonest first. */
-function nextAtPlaces(events: CalendarEvent[]): CalendarEvent[] {
+/** The next occurrence of each event that hasn't ended, soonest first. */
+function nextOccurrences(events: CalendarEvent[]): CalendarEvent[] {
   const now = new Date();
   const next = new Map<string, CalendarEvent>();
   for (const event of events) {
-    if (!event.place || event.end <= now) continue;
+    if (event.end <= now) continue;
     const seen = next.get(event.source.id);
     if (!seen || event.start < seen.start) next.set(event.source.id, event);
   }
@@ -369,7 +371,7 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
     fetchUpcomingEvents(eventCalendars)
       .then((events) =>
         setUpcomingEvents(
-          nextAtPlaces(events.map(toEvent).filter((e): e is CalendarEvent => e != null)),
+          nextOccurrences(events.map(toEvent).filter((e): e is CalendarEvent => !!e?.place)),
         ),
       )
       .catch((error) => console.warn('[calendar] upcoming events failed', error));
@@ -400,6 +402,16 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
     });
     return () => subscription.remove();
   }, [applyPermissions]);
+
+  const listUpcomingEvents = useCallback(
+    async () =>
+      nextOccurrences(
+        (await fetchUpcomingEvents(eventCalendars))
+          .map(toEvent)
+          .filter((e): e is CalendarEvent => e != null),
+      ),
+    [eventCalendars, toEvent],
+  );
 
   const getDay = useCallback(
     (date: Date) => {
@@ -481,6 +493,7 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
       getReminder,
       openReminders,
       upcomingEvents,
+      listUpcomingEvents,
       reminderLists,
       defaultReminderList,
       defaultEventCalendar,
@@ -498,6 +511,7 @@ export function CalendarProvider({ children }: { children: ReactNode }) {
       getReminder,
       openReminders,
       upcomingEvents,
+      listUpcomingEvents,
       reminderLists,
       defaultReminderList,
       defaultEventCalendar,

@@ -1,19 +1,10 @@
 import type { EventLocation } from 'expo-calendar';
 import { Stack, router, useLocalSearchParams } from 'expo-router';
 import { useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Alert,
-  Pressable,
-  ScrollView,
-  StyleSheet,
-  Text,
-  View,
-} from 'react-native';
+import { ActivityIndicator, Alert, ScrollView, StyleSheet, Text, View } from 'react-native';
 
-import { Field, Row, Section, Separator } from '../../components/Form';
+import { PickRow, Row, SearchRow, Section, Separator } from '../../components/Form';
 import { HeaderButton } from '../../components/HeaderButton';
-import { Icon, icons } from '../../components/Icon';
 import {
   distanceMeters,
   searchPlaces,
@@ -117,25 +108,19 @@ export default function EventPlaceScreen() {
       />
 
       <Section footer={event.location ? `Now: ${event.location.replace(/\n/g, ', ')}` : undefined}>
-        <View style={styles.searchRow}>
-          <Icon name={icons.search} color={theme.secondaryText} size={16} />
-          <Field
-            style={styles.searchField}
-            placeholder="Search for a place or address"
-            value={query}
-            onChangeText={changeQuery}
-            onSubmitEditing={() => pickResult(searchPlaces(query, near))}
-            returnKeyType="search"
-            autoCorrect={false}
-            autoFocus={saved.length === 0}
-          />
-          {searching ? <ActivityIndicator /> : null}
-        </View>
+        <SearchRow
+          placeholder="Search for a place or address"
+          value={query}
+          onChangeText={changeQuery}
+          onSubmitEditing={() => pickResult(searchPlaces(query, near))}
+          searching={searching}
+          autoFocus={saved.length === 0}
+        />
         {query
           ? suggestions.map((suggestion) => (
               <View key={suggestion.id}>
                 <Separator />
-                <PlaceRow
+                <PickRow
                   title={suggestion.title}
                   subtitle={suggestion.subtitle}
                   onPress={() => pickResult(searchSuggestion(suggestion))}
@@ -150,7 +135,7 @@ export default function EventPlaceScreen() {
           {saved.map((place, i) => (
             <View key={place.id}>
               {i > 0 ? <Separator /> : null}
-              <PlaceRow
+              <PickRow
                 title={place.name}
                 subtitle={placeCollections(place, collections)
                   .map((c) => c.name)
@@ -173,57 +158,6 @@ export default function EventPlaceScreen() {
   );
 }
 
-function PlaceRow({
-  title,
-  subtitle,
-  color,
-  checked = false,
-  onPress,
-}: {
-  title: string;
-  subtitle?: string;
-  color?: string;
-  checked?: boolean;
-  onPress: () => void;
-}) {
-  const theme = useTheme();
-  return (
-    <Pressable
-      onPress={onPress}
-      style={({ pressed }) => [styles.placeRow, pressed && { backgroundColor: theme.fill }]}
-      accessibilityRole="button"
-      accessibilityState={{ selected: checked }}
-    >
-      {color ? <View style={[styles.dot, { backgroundColor: color }]} /> : null}
-      <View style={styles.placeText}>
-        <Text style={[styles.placeTitle, { color: theme.text }]} numberOfLines={1}>
-          {title}
-        </Text>
-        {subtitle ? (
-          <Text style={[styles.placeSubtitle, { color: theme.secondaryText }]} numberOfLines={1}>
-            {subtitle}
-          </Text>
-        ) : null}
-      </View>
-      {checked ? <Icon name={icons.check} color={theme.blue} size={16} weight="semibold" /> : null}
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
   missing: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  searchRow: { flexDirection: 'row', alignItems: 'center', paddingLeft: 14, paddingRight: 12 },
-  searchField: { flex: 1, paddingHorizontal: 8 },
-  placeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 12,
-    minHeight: 44,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  dot: { width: 12, height: 12, borderRadius: 6 },
-  placeText: { flex: 1 },
-  placeTitle: { fontSize: 17 },
-  placeSubtitle: { fontSize: 13, marginTop: 1 },
 });

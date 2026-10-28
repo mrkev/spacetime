@@ -6,7 +6,7 @@ jest.mock('expo-calendar', () => ({}));
 jest.mock('../../time/CalendarProvider', () => ({}));
 
 import type { CalendarReminder } from '../../time/CalendarProvider';
-import { DEFAULT_RADIUS, toLocationReminder } from '../locationReminders';
+import { DEFAULT_RADIUS, moveReminderTo, toLocationReminder } from '../locationReminders';
 
 function reminder(alarms: unknown[]): CalendarReminder {
   return {
@@ -53,5 +53,53 @@ describe('toLocationReminder', () => {
     expect(
       toLocationReminder(reminder([{ structuredLocation: { title: 'Nowhere', coords: {} } }])),
     ).toBeNull();
+  });
+});
+
+describe('moveReminderTo', () => {
+  const bakery = { latitude: 19.43, longitude: -99.13, name: 'Bakery', address: 'Calle 1' };
+
+  function updated(alarms: unknown[]) {
+    const r = reminder(alarms);
+    const update = jest.fn(() => Promise.resolve());
+    r.source.update = update as CalendarReminder['source']['update'];
+    return { r, update };
+  }
+
+  it('adds a location alarm with the defaults, keeping other alarms', async () => {
+    const { r, update } = updated([{ relativeOffset: 0 }]);
+    await moveReminderTo(r, bakery, { trigger: 'arrive', radius: 250 });
+    expect(update).toHaveBeenCalledWith({
+      alarms: [
+        { relativeOffset: 0 },
+        {
+          structuredLocation: {
+            title: 'Bakery',
+            proximity: 'enter',
+            radius: 250,
+            coords: { latitude: 19.43, longitude: -99.13 },
+          },
+        },
+      ],
+    });
+  });
+
+  it('replaces a location, keeping its trigger and radius', async () => {
+    const { r, update } = updated([
+      { structuredLocation: { title: 'Market', proximity: 'leave', radius: 500, coords } },
+    ]);
+    await moveReminderTo(r, bakery, { trigger: 'arrive', radius: 250 });
+    expect(update).toHaveBeenCalledWith({
+      alarms: [
+        {
+          structuredLocation: {
+            title: 'Bakery',
+            proximity: 'leave',
+            radius: 500,
+            coords: { latitude: 19.43, longitude: -99.13 },
+          },
+        },
+      ],
+    });
   });
 });

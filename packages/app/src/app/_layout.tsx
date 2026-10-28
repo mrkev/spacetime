@@ -50,7 +50,11 @@ export default function RootLayout() {
             />
             <Stack.Screen
               name="place/todo"
-              options={{ presentation: 'modal', title: 'New Todo' }}
+              options={{ presentation: 'modal', title: 'Add to Reminder' }}
+            />
+            <Stack.Screen
+              name="place/event"
+              options={{ presentation: 'modal', title: 'Add to Event' }}
             />
             <Stack.Screen
               name="place/reminder/[id]"

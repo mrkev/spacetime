@@ -48,7 +48,7 @@ function showOptions(title: string | undefined, options: Option[], onCancel?: ()
 export type Span = 'this' | 'future';
 
 /** Like Calendar, ask whether a change to a repeating event applies to later ones too. */
-function chooseSpan(event: CalendarEvent, verb: 'Save' | 'Delete'): Promise<Span | null> {
+export function chooseSpan(event: CalendarEvent, verb: 'Save' | 'Delete'): Promise<Span | null> {
   if (!event.recurring) return Promise.resolve('this');
   return new Promise((resolve) => {
     const pick = (span: Span) => () => resolve(span);

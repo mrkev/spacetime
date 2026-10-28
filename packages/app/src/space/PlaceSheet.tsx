@@ -257,7 +257,7 @@ export function PlaceSheet({ id }: { id: string }) {
               )}
             </List.ForEach>
             <Button
-              label="Add Todo"
+              label="Add to Reminder"
               systemImage="plus.circle"
               onPress={() =>
                 router.push({ pathname: '/place/todo', params: { placeId: place.id } })
@@ -287,11 +287,20 @@ export function PlaceSheet({ id }: { id: string }) {
                 </HStack>
               </Button>
             ))}
-            <Button
-              label="Add Event"
-              systemImage="plus.circle"
-              onPress={() => createEvent(undefined, eventLocation(place))}
-            />
+            <Menu label="Add to Event" systemImage="plus.circle">
+              <Button
+                label="New Event…"
+                systemImage="plus"
+                onPress={() => createEvent(undefined, eventLocation(place))}
+              />
+              <Button
+                label="Existing Event…"
+                systemImage="calendar"
+                onPress={() =>
+                  router.push({ pathname: '/place/event', params: { placeId: place.id } })
+                }
+              />
+            </Menu>
           </Section>
 
           {place.saved?.notes ? (
