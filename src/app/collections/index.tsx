@@ -69,9 +69,7 @@ export default function CollectionsScreen() {
           ),
         }}
       />
-      <Section
-        footer="Places in Reminders notify you when you arrive at or leave them."
-      >
+      <Section footer="Places in Reminders notify you when you arrive at or leave them.">
         {renderRows(reminders)}
       </Section>
       <Section title="My Maps">
@@ -86,8 +84,20 @@ export default function CollectionsScreen() {
 }
 
 const styles = StyleSheet.create({
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 16, minHeight: 52 },
-  badge: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    minHeight: 52,
+  },
+  badge: {
+    width: 30,
+    height: 30,
+    borderRadius: 15,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
   name: { flex: 1, fontSize: 17 },
   count: { fontSize: 17 },
   empty: { padding: 16, fontSize: 15 },

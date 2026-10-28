@@ -6,7 +6,12 @@ import { Field, Section, Segmented, Separator, SwitchRow } from '../components/F
 import { Icon, icons } from '../components/Icon';
 import { describeCoordinate, searchAddress, type Coordinate } from '../lib/geo';
 import { useTheme, withAlpha } from '../lib/theme';
-import { openSettings, permissionMessages, requestReminderPermissions, syncGeofences } from './geofence';
+import {
+  openSettings,
+  permissionMessages,
+  requestReminderPermissions,
+  syncGeofences,
+} from './geofence';
 import {
   REMINDERS_COLLECTION_ID,
   type Collection,
@@ -54,7 +59,8 @@ export function usePlaceForm(initial: Partial<PlaceFormState> & { collectionId: 
 
   const isReminder = state.collectionId === REMINDERS_COLLECTION_ID;
   const canSave =
-    !!state.coordinate && (isReminder ? !!(state.reminder.title.trim() || state.name.trim()) : !!state.name.trim());
+    !!state.coordinate &&
+    (isReminder ? !!(state.reminder.title.trim() || state.name.trim()) : !!state.name.trim());
 
   return { state, update, updateReminder, isReminder, canSave };
 }
@@ -125,7 +131,10 @@ export function PlaceFormFields({
 
   useEffect(() => {
     if (state.coordinate) {
-      mapRef.current?.animateToRegion({ ...state.coordinate, ...regionSpan(isReminder ? state.reminder.radius : 0) });
+      mapRef.current?.animateToRegion({
+        ...state.coordinate,
+        ...regionSpan(isReminder ? state.reminder.radius : 0),
+      });
     }
   }, [state.coordinate, isReminder, state.reminder.radius]);
 
@@ -169,7 +178,10 @@ export function PlaceFormFields({
           <MapView
             ref={mapRef}
             style={styles.preview}
-            initialRegion={{ ...state.coordinate, ...regionSpan(isReminder ? state.reminder.radius : 0) }}
+            initialRegion={{
+              ...state.coordinate,
+              ...regionSpan(isReminder ? state.reminder.radius : 0),
+            }}
             pitchEnabled={false}
             rotateEnabled={false}
             toolbarEnabled={false}
@@ -209,7 +221,11 @@ export function PlaceFormFields({
             <Separator />
           </>
         ) : null}
-        <Field placeholder="Place name" value={state.name} onChangeText={(name) => update({ name })} />
+        <Field
+          placeholder="Place name"
+          value={state.name}
+          onChangeText={(name) => update({ name })}
+        />
       </Section>
 
       <Section title="Collection">

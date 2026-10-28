@@ -20,7 +20,11 @@ export function AccessBanner() {
       </Text>
       <Pressable
         onPress={() => (denied ? Linking.openSettings() : requestAccess())}
-        style={({ pressed }) => [styles.button, { backgroundColor: theme.tint }, pressed && { opacity: 0.7 }]}
+        style={({ pressed }) => [
+          styles.button,
+          { backgroundColor: theme.tint },
+          pressed && { opacity: 0.7 },
+        ]}
       >
         <Text style={styles.buttonLabel}>{denied ? 'Open Settings' : 'Allow Access'}</Text>
       </Pressable>

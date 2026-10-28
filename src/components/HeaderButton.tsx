@@ -13,7 +13,15 @@ type Props = {
   accessibilityLabel?: string;
 };
 
-export function HeaderButton({ onPress, icon, label, bold, disabled, color, accessibilityLabel }: Props) {
+export function HeaderButton({
+  onPress,
+  icon,
+  label,
+  bold,
+  disabled,
+  color,
+  accessibilityLabel,
+}: Props) {
   const theme = useTheme();
   const tint = disabled ? theme.tertiaryText : (color ?? theme.tint);
   return (

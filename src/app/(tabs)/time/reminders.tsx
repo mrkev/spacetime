@@ -25,8 +25,7 @@ export default function RemindersScreen() {
   const { openReminders, toggleReminder, remindersStatus, requestAccess } = useCalendar();
   const { places, collections } = useSpaceState();
   const { showAddMenu } = useTimeActions();
-  const placeColor =
-    collections.find((c) => c.id === REMINDERS_COLLECTION_ID)?.color ?? theme.tint;
+  const placeColor = collections.find((c) => c.id === REMINDERS_COLLECTION_ID)?.color ?? theme.tint;
 
   const sections = useMemo(() => {
     const placeRows: Row[] = places
@@ -34,7 +33,8 @@ export default function RemindersScreen() {
       // Active first, then most recent.
       .sort(
         (a, b) =>
-          Number(!!b.reminder?.enabled) - Number(!!a.reminder?.enabled) || b.createdAt - a.createdAt,
+          Number(!!b.reminder?.enabled) - Number(!!a.reminder?.enabled) ||
+          b.createdAt - a.createdAt,
       )
       .map((place) => ({ kind: 'place', key: place.id, place }));
     const scheduled: Row[] = openReminders
@@ -45,7 +45,11 @@ export default function RemindersScreen() {
       .map((reminder) => ({ kind: 'reminder', key: reminder.key, reminder }));
 
     return [
-      { title: 'At a Place', data: placeRows, empty: 'Long-press the map to add a place reminder.' },
+      {
+        title: 'At a Place',
+        data: placeRows,
+        empty: 'Long-press the map to add a place reminder.',
+      },
       ...(Platform.OS === 'ios'
         ? [
             { title: 'Scheduled', data: scheduled, empty: 'No upcoming reminders.' },
@@ -60,7 +64,11 @@ export default function RemindersScreen() {
       <Stack.Screen
         options={{
           headerRight: () => (
-            <HeaderButton icon={icons.plus} accessibilityLabel="Add" onPress={() => showAddMenu()} />
+            <HeaderButton
+              icon={icons.plus}
+              accessibilityLabel="Add"
+              onPress={() => showAddMenu()}
+            />
           ),
         }}
       />
@@ -71,8 +79,13 @@ export default function RemindersScreen() {
         stickySectionHeadersEnabled={false}
         contentContainerStyle={styles.content}
         ListHeaderComponent={
-          Platform.OS === 'ios' && remindersStatus !== 'granted' && remindersStatus !== 'loading' ? (
-            <Pressable onPress={requestAccess} style={[styles.notice, { backgroundColor: theme.card }]}>
+          Platform.OS === 'ios' &&
+          remindersStatus !== 'granted' &&
+          remindersStatus !== 'loading' ? (
+            <Pressable
+              onPress={requestAccess}
+              style={[styles.notice, { backgroundColor: theme.card }]}
+            >
               <Text style={{ color: theme.text }}>
                 Allow access to Reminders to see your scheduled reminders here.
               </Text>
@@ -198,7 +211,13 @@ const styles = StyleSheet.create({
   empty: { fontSize: 15, paddingVertical: 4 },
   firstRow: { borderTopLeftRadius: 10, borderTopRightRadius: 10 },
   lastRow: { borderBottomLeftRadius: 10, borderBottomRightRadius: 10 },
-  row: { flexDirection: 'row', alignItems: 'center', gap: 12, paddingHorizontal: 14, paddingVertical: 10 },
+  row: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
   rowText: { flex: 1, gap: 2 },
   title: { fontSize: 17 },
   done: { color: '#8E8E93' },

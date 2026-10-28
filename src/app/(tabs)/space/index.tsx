@@ -208,7 +208,9 @@ export default function SpaceScreen() {
             pinColor={theme.blue}
             title={result.name}
             description="Tap to save"
-            onCalloutPress={() => addPlaceAt(result, { name: result.name, address: result.address })}
+            onCalloutPress={() =>
+              addPlaceAt(result, { name: result.name, address: result.address })
+            }
           />
         ) : null}
       </MapView>
@@ -282,7 +284,10 @@ export default function SpaceScreen() {
               {result.name}
             </Text>
             {result.address ? (
-              <Text style={[styles.resultAddress, { color: theme.secondaryText }]} numberOfLines={1}>
+              <Text
+                style={[styles.resultAddress, { color: theme.secondaryText }]}
+                numberOfLines={1}
+              >
                 {result.address}
               </Text>
             ) : null}
@@ -300,7 +305,9 @@ export default function SpaceScreen() {
           pointerEvents="none"
         >
           <Text style={[styles.hintText, { color: theme.secondaryText }]}>
-            {places.length === 0 ? 'Long-press the map to save a place' : `${visiblePlaces.length} places`}
+            {places.length === 0
+              ? 'Long-press the map to save a place'
+              : `${visiblePlaces.length} places`}
           </Text>
         </View>
       )}

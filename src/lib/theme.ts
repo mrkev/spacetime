@@ -68,6 +68,10 @@ function normalizeHex(color: string): string | null {
   const match = /^#?([0-9a-f]{3}|[0-9a-f]{6})([0-9a-f]{2})?$/i.exec(color.trim());
   if (!match) return null;
   let rgb = match[1];
-  if (rgb.length === 3) rgb = rgb.split('').map((c) => c + c).join('');
+  if (rgb.length === 3)
+    rgb = rgb
+      .split('')
+      .map((c) => c + c)
+      .join('');
   return `#${rgb}`;
 }

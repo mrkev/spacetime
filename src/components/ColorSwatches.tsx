@@ -22,10 +22,7 @@ export function ColorSwatches({
             accessibilityRole="button"
             accessibilityLabel={`Color ${color}`}
             accessibilityState={{ selected }}
-            style={[
-              styles.ring,
-              { borderColor: selected ? theme.tertiaryText : 'transparent' },
-            ]}
+            style={[styles.ring, { borderColor: selected ? theme.tertiaryText : 'transparent' }]}
           >
             <View style={[styles.swatch, { backgroundColor: color }]}>
               {selected ? <Icon name={icons.check} size={16} color="#fff" weight="bold" /> : null}

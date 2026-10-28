@@ -132,7 +132,12 @@ describe('syncGeofences', () => {
 
     const regions = (Location.startGeofencingAsync as jest.Mock).mock.calls.at(-1)[1];
     expect(regions).toContainEqual(
-      expect.objectContaining({ identifier: place.id, radius: 250, notifyOnEnter: true, notifyOnExit: true }),
+      expect.objectContaining({
+        identifier: place.id,
+        radius: 250,
+        notifyOnEnter: true,
+        notifyOnExit: true,
+      }),
     );
     // We're standing on the pin, so arriving shouldn't fire until we leave and come back.
     expect(reminderOf(place.id).lastState).toBe('inside');

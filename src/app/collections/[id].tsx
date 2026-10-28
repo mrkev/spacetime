@@ -40,7 +40,9 @@ export default function EditCollectionScreen() {
     const count = places.filter((p) => p.collectionId === existing.id).length;
     Alert.alert(
       `Delete “${existing.name}”?`,
-      count > 0 ? `This also deletes ${count} saved ${count === 1 ? 'place' : 'places'}.` : undefined,
+      count > 0
+        ? `This also deletes ${count} saved ${count === 1 ? 'place' : 'places'}.`
+        : undefined,
       [
         { text: 'Cancel', style: 'cancel' },
         {
@@ -76,7 +78,11 @@ export default function EditCollectionScreen() {
           ),
         }}
       />
-      <Section footer={isReminders ? 'The Reminders collection can be renamed but not deleted.' : undefined}>
+      <Section
+        footer={
+          isReminders ? 'The Reminders collection can be renamed but not deleted.' : undefined
+        }
+      >
         <Field placeholder="Name" value={name} onChangeText={setName} autoFocus={isNew} />
       </Section>
       <Section title="Pin Color">

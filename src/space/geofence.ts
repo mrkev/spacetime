@@ -46,8 +46,11 @@ async function handleTransition(placeId: string, inside: boolean) {
   // iOS reports the current state of each region when monitoring starts, so only notify on an
   // actual transition: arriving requires that we weren't already inside, leaving requires that we were.
   const shouldFire =
-    reminder.trigger === 'arrive' ? inside && previous !== 'inside' : !inside && previous === 'inside';
-  const coolingDown = reminder.lastFiredAt != null && now - reminder.lastFiredAt < REFIRE_COOLDOWN_MS;
+    reminder.trigger === 'arrive'
+      ? inside && previous !== 'inside'
+      : !inside && previous === 'inside';
+  const coolingDown =
+    reminder.lastFiredAt != null && now - reminder.lastFiredAt < REFIRE_COOLDOWN_MS;
 
   if (!shouldFire || coolingDown) {
     const state = inside ? 'inside' : 'outside';
@@ -141,8 +144,7 @@ function pickRegions(places: Place[], here: Coordinate | null): Place[] {
 }
 
 export type ReminderPermissionResult =
-  | { ok: true }
-  | { ok: false; reason: 'location' | 'background' | 'notifications' };
+  { ok: true } | { ok: false; reason: 'location' | 'background' | 'notifications' };
 
 /**
  * Asks for everything location reminders need: location (Always), and notifications.
@@ -173,8 +175,7 @@ export const permissionMessages: Record<
   string
 > = {
   location: 'Spacetime needs your location to remind you when you arrive at or leave a place.',
-  background:
-    'To remind you while the app is closed, set Location access to "Always" in Settings.',
+  background: 'To remind you while the app is closed, set Location access to "Always" in Settings.',
   notifications: 'Turn on notifications in Settings so Spacetime can alert you.',
 };
 

@@ -48,7 +48,12 @@ export function Field(props: TextInputProps) {
     <TextInput
       placeholderTextColor={theme.secondaryText}
       {...props}
-      style={[styles.field, { color: theme.text }, props.multiline && styles.multiline, props.style]}
+      style={[
+        styles.field,
+        { color: theme.text },
+        props.multiline && styles.multiline,
+        props.style,
+      ]}
     />
   );
 }

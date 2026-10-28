@@ -112,10 +112,7 @@ function PlaceEditor({ place }: { place: Place }) {
               </Section>
             ) : null}
             <Section>
-              <Row
-                label="Directions"
-                onPress={() => openDirections(place, place.name)}
-              />
+              <Row label="Directions" onPress={() => openDirections(place, place.name)} />
               <Separator />
               <Row label="Delete Place" destructive onPress={confirmDelete} />
             </Section>
