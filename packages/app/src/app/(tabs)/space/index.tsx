@@ -12,7 +12,13 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import MapView, { Circle, Marker, type LongPressEvent, type Region } from 'react-native-maps';
+import MapView, {
+  Circle,
+  Marker,
+  type LongPressEvent,
+  type MapPressEvent,
+  type Region,
+} from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Icon, icons } from '../../../components/Icon';
@@ -40,6 +46,13 @@ import { REMINDERS_COLLECTION_ID, useSpaceState, type Collection } from '../../.
 const ALL = 'all';
 const USER_DELTA = 0.03;
 const SEARCH_HEIGHT = 46;
+/**
+ * Where a selected pin's balloon is drawn, around its tip. MapKit draws it larger than the pin's
+ * view, which only takes taps at the base.
+ */
+const SELECTED_PIN = { halfWidth: 28, above: 72, below: 8 };
+/** A tap within this long (ms) of a pin being selected is the tap that selected it. */
+const SELECT_GRACE = 500;
 const liquidGlass = isLiquidGlassAvailable();
 
 export default function SpaceScreen() {
@@ -67,6 +80,7 @@ export default function SpaceScreen() {
   const [mapReady, setMapReady] = useState(false);
   const [userRegion, setUserRegion] = useState<Region | null>(null);
   const centeredOnUser = useRef(false);
+  const selectedAt = useRef(0);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   const inFilter = (id: string) =>
@@ -148,10 +162,22 @@ export default function SpaceScreen() {
     router.push({ pathname: '/place/[id]', params: { id: place.id } });
   };
 
-  const pressPlace = (place: MapPlace) => {
+  // MapKit selects a pin on the first tap. It doesn't report taps on a pin that's already
+  // selected, so check whether a tap on the map landed on the selected one.
+  const pressMap = async (e: MapPressEvent) => {
     Keyboard.dismiss();
-    if (selectedPlaceId === place.id) openPlace(place);
-    else setSelectedPlaceId(place.id);
+    const place = selectedPlace;
+    if (!place || e.timeStamp - selectedAt.current < SELECT_GRACE) return;
+    const { x, y } = e.nativeEvent.position;
+    const tip = await mapRef.current?.pointForCoordinate(place);
+    if (
+      tip &&
+      Math.abs(x - tip.x) <= SELECTED_PIN.halfWidth &&
+      y >= tip.y - SELECTED_PIN.above &&
+      y <= tip.y + SELECTED_PIN.below
+    ) {
+      openPlace(place);
+    }
   };
 
   const goToMyLocation = async () => {
@@ -230,7 +256,7 @@ export default function SpaceScreen() {
           visibleRegion.current = region;
           saveMapRegion(region);
         }}
-        onPress={Keyboard.dismiss}
+        onPress={pressMap}
         showsUserLocation={locationGranted}
         showsMyLocationButton={false}
         showsCompass={false}
@@ -248,7 +274,10 @@ export default function SpaceScreen() {
               centerOffset={PIN_OFFSET}
               accessibilityLabel={place.name}
               // Without a title, selecting it doesn't open a callout.
-              onPress={() => pressPlace(place)}
+              onSelect={(e) => {
+                selectedAt.current = e.timeStamp;
+                setSelectedPlaceId(place.id);
+              }}
               onDeselect={() => setSelectedPlaceId((id) => (id === place.id ? null : id))}
             />
           );
@@ -271,7 +300,7 @@ export default function SpaceScreen() {
             centerOffset={PIN_OFFSET}
             title={found.name}
             description="Tap to save"
-            onPress={() => {
+            onSelect={() => {
               setSelected(i);
               setSelectedPlaceId(null);
             }}
