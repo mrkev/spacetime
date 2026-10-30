@@ -33,6 +33,9 @@ export type MapPlace = Coordinate & {
   id: string;
   name: string;
   address?: string;
+  /** Its icon for the pin (see PlaceIconName): one picked for it, or its own on Apple's map. */
+  icon?: string;
+  mapIcon?: string;
   /** Null if the place only exists because of its todos or events. */
   saved: Place | null;
   collectionIds: string[];
@@ -54,6 +57,8 @@ export function buildMapPlaces(
       address: place.address,
       latitude: place.latitude,
       longitude: place.longitude,
+      icon: place.icon ?? place.mapIcon,
+      mapIcon: place.mapIcon,
       saved: place,
       collectionIds: place.collectionIds,
       todos: [],
@@ -63,17 +68,7 @@ export function buildMapPlaces(
   const ownerAt = (at: Coordinate, name: string, address: string | undefined) => {
     const owner = nearest(saved, at) ?? nearest(unsaved, at);
     if (owner) return owner;
-    const place: MapPlace = {
-      id: `${UNSAVED_PREFIX}${at.latitude.toFixed(6)},${at.longitude.toFixed(6)}`,
-      name,
-      address,
-      latitude: at.latitude,
-      longitude: at.longitude,
-      saved: null,
-      collectionIds: [],
-      todos: [],
-      events: [],
-    };
+    const place = unsavedPlace(at, name, address);
     unsaved.push(place);
     return place;
   };
@@ -119,6 +114,36 @@ export function parseLocationTitle(title: string): { name: string; address?: str
   return { name: name.trim() || 'Dropped Pin', address: address || undefined };
 }
 
+/** A place that isn't saved and has nothing at it yet, with its icon if it's on Apple's map. */
+export function unsavedPlace(
+  at: Coordinate,
+  name: string,
+  address?: string,
+  mapIcon?: string,
+): MapPlace {
+  return {
+    id: `${UNSAVED_PREFIX}${at.latitude.toFixed(6)},${at.longitude.toFixed(6)}`,
+    name,
+    address,
+    latitude: at.latitude,
+    longitude: at.longitude,
+    icon: mapIcon,
+    mapIcon,
+    saved: null,
+    collectionIds: [],
+    todos: [],
+    events: [],
+  };
+}
+
+// Places opened from the map that aren't on it (yet), like a shop on Apple's map, by ID.
+const shownPlaces = new Map<string, MapPlace>();
+
+/** Lets `findMapPlace` find a place that isn't on the map, so it can be opened. */
+export function rememberPlace(place: MapPlace) {
+  shownPlaces.set(place.id, place);
+}
+
 function nearest(candidates: MapPlace[], to: Coordinate): MapPlace | null {
   let best: MapPlace | null = null;
   let bestDistance = LINK_RADIUS;
@@ -134,7 +159,7 @@ function nearest(candidates: MapPlace[], to: Coordinate): MapPlace | null {
 
 /**
  * Finds a place by ID or, failing that, the place nearest `near`. A place's ID changes when it's
- * saved or unsaved, but it stays where it was.
+ * saved or unsaved, but it stays where it was. Places passed to `rememberPlace` are found too.
  */
 export function findMapPlace(
   mapPlaces: MapPlace[],
@@ -144,7 +169,7 @@ export function findMapPlace(
   const found = mapPlaces.find((p) => p.id === id);
   if (found) return found;
   const anchor = near ?? parseUnsavedId(id);
-  return anchor ? nearest(mapPlaces, anchor) : null;
+  return (anchor && nearest(mapPlaces, anchor)) ?? shownPlaces.get(id) ?? null;
 }
 
 function parseUnsavedId(id: string): Coordinate | null {
@@ -200,6 +225,7 @@ export function addToCollection(place: MapPlace, collectionId: string) {
     address: place.address,
     latitude: place.latitude,
     longitude: place.longitude,
+    mapIcon: place.mapIcon,
     collectionIds: [collectionId],
   });
 }

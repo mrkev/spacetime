@@ -30,6 +30,7 @@ import { useTheme } from '../lib/theme';
 import { useTimeActions } from '../time/actions';
 import { UPCOMING_DAYS, useCalendar } from '../time/CalendarProvider';
 import { describeTrigger, type LocationReminder } from './locationReminders';
+import { PlaceBadge, badgeColor } from './PlaceIcon';
 import {
   addToCollection,
   describeEventTime,
@@ -139,6 +140,15 @@ export function PlaceSheet({ id }: { id: string }) {
     <View style={[styles.container, { backgroundColor: theme.groupedBackground }]}>
       <Stack.Screen options={{ headerShown: false }} />
       <View style={styles.header}>
+        <Pressable
+          disabled={!place.saved}
+          onPress={() => router.push({ pathname: '/place/icon/[id]', params: { id: place.id } })}
+          accessibilityRole="button"
+          accessibilityLabel="Icon"
+          accessibilityHint={place.saved ? 'Changes the icon' : undefined}
+        >
+          <PlaceBadge icon={place.icon} color={badgeColor(place, collections, theme)} size={44} />
+        </Pressable>
         <View style={styles.titles}>
           <RNText style={[styles.name, { color: theme.text }]} numberOfLines={2}>
             {place.name}

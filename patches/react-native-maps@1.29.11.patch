@@ -1,0 +1,376 @@
+diff --git a/dist/src/MapMarker.d.ts b/dist/src/MapMarker.d.ts
+index 71cef61f97638c9c72102a36774bb33d61608137..5cbda7aabf768846bccca6cec80a4593a7e62442 100644
+--- a/dist/src/MapMarker.d.ts
++++ b/dist/src/MapMarker.d.ts
+@@ -292,6 +292,11 @@ export type MapMarkerProps = ViewProps & {
+      * @platform Android: Not supported
+      */
+     useLegacyPinView?: boolean;
++    /**
++     * The icon in the Marker balloon: "symbol:<SF Symbol name>", or "image:<path>" for an image
++     * file under the app's Documents directory.
++     */
++    glyph?: string;
+ };
+ type OmittedProps = Omit<MapMarkerProps, 'stopPropagation'>;
+ export type NativeProps = Modify<OmittedProps, {
+diff --git a/dist/src/MapView.types.d.ts b/dist/src/MapView.types.d.ts
+index 28aec31270d2522e1424fcb553a09bed7d04cd7d..f127a8b006c1f9ea77352032497469491d3b1c17 100644
+--- a/dist/src/MapView.types.d.ts
++++ b/dist/src/MapView.types.d.ts
+@@ -77,6 +77,12 @@ export type PoiClickEvent = NativeSyntheticEvent<{
+     placeId: string;
+     name: string;
+     coordinate: LatLng;
++    /**
++     * Apple Maps: the point of interest's MKPointOfInterestCategory, and its icon saved as a file
++     * under the app's Documents directory (a path relative to it).
++     */
++    category?: string;
++    icon?: string;
+     /**
+      * @platform Android
+      */
+diff --git a/dist/src/specs/NativeComponentMarker.d.ts b/dist/src/specs/NativeComponentMarker.d.ts
+index a03b9f9258845ed1097cb78b703995118eeb2df9..dabf55090e3232920e3b90cde119ca68629c0017 100644
+--- a/dist/src/specs/NativeComponentMarker.d.ts
++++ b/dist/src/specs/NativeComponentMarker.d.ts
+@@ -272,6 +272,7 @@ export interface MarkerFabricNativeProps extends ViewProps {
+      * @platform Android: Not supported
+      */
+     useLegacyPinView?: boolean;
++    glyph?: string;
+ }
+ export interface NativeCommands {
+     animateToCoordinates: (viewRef: React.ElementRef<React.ComponentType>, latitude: Double, longitude: Double, duration: Int32) => void;
+diff --git a/ios/AirMaps/AIRMap.h b/ios/AirMaps/AIRMap.h
+index 17c1755000fd70d4390c6b8df847813310c8d101..1df21a8e3aba1b6c180a3721cc242b2440ca681f 100644
+--- a/ios/AirMaps/AIRMap.h
++++ b/ios/AirMaps/AIRMap.h
+@@ -69,6 +69,7 @@ extern const NSInteger AIRMapMaxZoomLevel;
+ @property (nonatomic, copy) RCTDirectEventBlock onDoublePress;
+ @property (nonatomic, copy) RCTDirectEventBlock onMarkerPress;
+ @property (nonatomic, copy) RCTDirectEventBlock onMarkerSelect;
++@property (nonatomic, copy) RCTDirectEventBlock onPoiClick;
+ @property (nonatomic, copy) RCTDirectEventBlock onMarkerDeselect;
+ @property (nonatomic, copy) RCTDirectEventBlock onMarkerDragStart;
+ @property (nonatomic, copy) RCTDirectEventBlock onMarkerDrag;
+diff --git a/ios/AirMaps/AIRMap.mm b/ios/AirMaps/AIRMap.mm
+index d3b0723f919d3d83456d8d8086a9f30fce7802cc..65dda98df069ebc60ffffd19af50da45d69847de 100644
+--- a/ios/AirMaps/AIRMap.mm
++++ b/ios/AirMaps/AIRMap.mm
+@@ -110,6 +110,10 @@ const NSInteger AIRMapMaxZoomLevel = 20;
+         _initialized = YES;
+         _showsPointsOfInterests = YES;
+         _pointsOfInterestFilter = @[];
++        // Let the map's own points of interest be tapped, and report them through onPoiClick.
++        if (@available(iOS 16.0, *)) {
++            self.selectableMapFeatures = MKMapFeatureOptionPointsOfInterest;
++        }
+         [self listenToMemoryWarnings];
+     }
+     return self;
+diff --git a/ios/AirMaps/AIRMapManager.m b/ios/AirMaps/AIRMapManager.m
+index d03403473e0e4ab4c891709259652a2546d2170f..5327497afc500752832297e08e2f4aced5958921 100644
+--- a/ios/AirMaps/AIRMapManager.m
++++ b/ios/AirMaps/AIRMapManager.m
+@@ -8,6 +8,7 @@
+  */
+ 
+ #import "AIRMapManager.h"
++#import <CommonCrypto/CommonDigest.h>
+ 
+ #import <React/RCTBridge.h>
+ #import <React/RCTUIManager.h>
+@@ -779,6 +780,75 @@ RCT_EXPORT_METHOD(getAddressFromCoordinates:(nonnull NSNumber *)reactTag
+ }
+ 
+ 
++// MapKit selects its points of interest (see selectableMapFeatures) only through these iOS 16
++// methods, not the ones for annotation views. Implementing them might stop MapKit from calling the
++// view methods for markers, so markers are passed on to those; handling one twice is harmless.
++- (void)mapView:(AIRMap *)mapView didSelectAnnotation:(id<MKAnnotation>)annotation
++{
++    if ([self reportPoi:annotation onMap:mapView selected:YES]) return;
++    MKAnnotationView *view = [mapView viewForAnnotation:annotation];
++    if (view) [self mapView:mapView didSelectAnnotationView:view];
++}
++
++- (void)mapView:(AIRMap *)mapView didDeselectAnnotation:(id<MKAnnotation>)annotation
++{
++    if ([self reportPoi:annotation onMap:mapView selected:NO]) return;
++    MKAnnotationView *view = [mapView viewForAnnotation:annotation];
++    if (view) [self mapView:mapView didDeselectAnnotationView:view];
++}
++
++// Saves a point of interest's icon (MapKit's glyph for it) under Documents/place-icons, named by its
++// contents so each icon is saved once, and returns its path relative to Documents.
++static NSString *savePoiIcon(UIImage *image)
++{
++    NSData *png = image ? UIImagePNGRepresentation(image) : nil;
++    if (!png) return @"";
++    unsigned char digest[CC_SHA256_DIGEST_LENGTH];
++    CC_SHA256(png.bytes, (CC_LONG)png.length, digest);
++    NSMutableString *name = [NSMutableString string];
++    for (int i = 0; i < 8; i++) [name appendFormat:@"%02x", digest[i]];
++    // The scale suffix lets UIImage load it at the right size.
++    NSString *relative = [NSString stringWithFormat:@"place-icons/%@@%dx.png", name, (int)image.scale];
++    NSURL *documents = [NSFileManager.defaultManager URLsForDirectory:NSDocumentDirectory
++                                                            inDomains:NSUserDomainMask].firstObject;
++    NSURL *url = [documents URLByAppendingPathComponent:relative];
++    if (![NSFileManager.defaultManager fileExistsAtPath:url.path]) {
++        [NSFileManager.defaultManager createDirectoryAtURL:url.URLByDeletingLastPathComponent
++                               withIntermediateDirectories:YES attributes:nil error:nil];
++        if (![png writeToURL:url atomically:YES]) return @"";
++    }
++    return relative;
++}
++
++// Reports a point of interest being selected or deselected through onPoiClick, with its category
++// and icon. Deselecting sends placeId "deselect". Returns whether it was one.
++- (BOOL)reportPoi:(id<MKAnnotation>)annotation onMap:(AIRMap *)mapView selected:(BOOL)selected
++{
++    if (@available(iOS 16.0, *)) {
++        if (![annotation isKindOfClass:[MKMapFeatureAnnotation class]]) return NO;
++        if (!mapView.onPoiClick) return YES;
++        MKMapFeatureAnnotation *feature = (MKMapFeatureAnnotation *)annotation;
++        CLLocationCoordinate2D coordinate = annotation.coordinate;
++        CGPoint point = [mapView convertCoordinate:coordinate toPointToView:mapView];
++        mapView.onPoiClick(@{
++            @"placeId": selected ? @"" : @"deselect",
++            @"name": annotation.title ?: @"",
++            @"category": feature.pointOfInterestCategory ?: @"",
++            @"icon": selected ? savePoiIcon(feature.iconStyle.image) : @"",
++            @"coordinate": @{
++                @"latitude": @(coordinate.latitude),
++                @"longitude": @(coordinate.longitude),
++            },
++            @"position": @{
++                @"x": @(point.x),
++                @"y": @(point.y),
++            },
++        });
++        return YES;
++    }
++    return NO;
++}
++
+ - (void)mapView:(AIRMap *)mapView didSelectAnnotationView:(MKAnnotationView *)view
+ {
+     if ([view.annotation isKindOfClass:[AIRMapMarker class]]) {
+diff --git a/ios/AirMaps/AIRMapMarker.h b/ios/AirMaps/AIRMapMarker.h
+index bc1338a1d6a5523a36e77de2ad3de8d4a25561a4..ef8082608ddc97eec8795a3c5e666fed3257c93f 100644
+--- a/ios/AirMaps/AIRMapMarker.h
++++ b/ios/AirMaps/AIRMapMarker.h
+@@ -38,6 +38,7 @@
+ @property (nonatomic, assign) MKFeatureVisibility titleVisibility;
+ @property (nonatomic, assign) MKFeatureVisibility subtitleVisibility;
+ @property (nonatomic, assign) BOOL useLegacyPinView;
++@property (nonatomic, copy) NSString *glyph;
+ 
+ @property (nonatomic, copy) RCTBubblingEventBlock onPress;
+ @property (nonatomic, copy) RCTDirectEventBlock onSelect;
+diff --git a/ios/AirMaps/AIRMapMarker.m b/ios/AirMaps/AIRMapMarker.m
+index 82ec84395d97ec18dfe1dd62ecd9a1f16548b394..77ef14713ca535a2073171fb494bdc0301916aae 100644
+--- a/ios/AirMaps/AIRMapMarker.m
++++ b/ios/AirMaps/AIRMapMarker.m
+@@ -131,6 +131,7 @@ NSInteger const AIR_CALLOUT_OPEN_ZINDEX_BASELINE = 999;
+             _markerView.draggable = self.draggable;
+             _markerView.layer.zPosition = self.zIndex;
+             _markerView.markerTintColor = self.pinColor;
++            _markerView.glyphImage = [self glyphImage];
+             _markerView.titleVisibility = self.titleVisibility ?: MKFeatureVisibilityHidden;
+             _markerView.subtitleVisibility = self.subtitleVisibility ?: MKFeatureVisibilityHidden;
+             _markerView.displayPriority = self.displayPriority;
+@@ -387,6 +388,27 @@ NSInteger const AIR_CALLOUT_OPEN_ZINDEX_BASELINE = 999;
+     }];
+ }
+ 
++- (void)setGlyph:(NSString *)glyph
++{
++    _glyph = [glyph copy];
++    _markerView.glyphImage = [self glyphImage];
++}
++
++// "symbol:<SF Symbol name>" or "image:<path under Documents>"; nil shows MapKit's default.
++- (UIImage *)glyphImage
++{
++    if ([_glyph hasPrefix:@"symbol:"]) {
++        return [UIImage systemImageNamed:[_glyph substringFromIndex:7]];
++    }
++    if ([_glyph hasPrefix:@"image:"]) {
++        NSURL *documents = [NSFileManager.defaultManager URLsForDirectory:NSDocumentDirectory
++                                                                inDomains:NSUserDomainMask].firstObject;
++        NSURL *url = [documents URLByAppendingPathComponent:[_glyph substringFromIndex:6]];
++        return [UIImage imageWithContentsOfFile:url.path];
++    }
++    return nil;
++}
++
+ - (void)setPinColor:(UIColor *)pinColor
+ {
+     _pinColor = pinColor;
+diff --git a/ios/AirMaps/RNMapsMapView.mm b/ios/AirMaps/RNMapsMapView.mm
+index fcee5e2bc0398c8d09e07253e3ce6db5df466978..d1137086f7caf48380d4aaf1ab4709c2ad80f30e 100644
+--- a/ios/AirMaps/RNMapsMapView.mm
++++ b/ios/AirMaps/RNMapsMapView.mm
+@@ -416,6 +416,29 @@ mapViewEventEmitter->emitterFunction(data);                               \
+         HANDLE_MARKER_DRAG_EVENT(OnMarkerDragEnd, onMarkerDragEnd);
+     };
+ 
++    _view.onPoiClick = [self](NSDictionary* dictionary) {
++        if (_eventEmitter) {
++            NSDictionary* coordinateDict = dictionary[@"coordinate"];
++            NSDictionary* positionDict = dictionary[@"position"];
++            auto mapViewEventEmitter = std::static_pointer_cast<RNMapsMapViewEventEmitter const>(_eventEmitter);
++            facebook::react::RNMapsMapViewEventEmitter::OnPoiClick data = {
++                .placeId = std::string([dictionary[@"placeId"] UTF8String]),
++                .name = std::string([dictionary[@"name"] UTF8String]),
++                .coordinate = {
++                    .latitude = [coordinateDict[@"latitude"] doubleValue],
++                    .longitude = [coordinateDict[@"longitude"] doubleValue],
++                },
++                .position = {
++                    .x = [positionDict[@"x"] doubleValue],
++                    .y = [positionDict[@"y"] doubleValue],
++                },
++                .category = std::string([dictionary[@"category"] UTF8String]),
++                .icon = std::string([dictionary[@"icon"] UTF8String]),
++            };
++            mapViewEventEmitter->onPoiClick(data);
++        }
++    };
++
+     _view.onMarkerSelect = [self](NSDictionary* dictionary) {
+         HANDLE_MARKER_EVENT(OnMarkerSelect, onMarkerSelect, "marker-select");
+     };
+diff --git a/ios/AirMaps/RNMapsMarkerView.mm b/ios/AirMaps/RNMapsMarkerView.mm
+index be7e91dc6ef5005a68e468f9f223c47c2e095b7f..53926459b392ab14c6861c033369cdd65941b49d 100644
+--- a/ios/AirMaps/RNMapsMarkerView.mm
++++ b/ios/AirMaps/RNMapsMarkerView.mm
+@@ -366,6 +366,7 @@ _view.name = CGPointMake(newViewProps.name.x, newViewProps.name.y); \
+     REMAP_MAPVIEW_PROP(isPreselected)
+ 
+     REMAP_MAPVIEW_COLOR_PROP(pinColor)
++    REMAP_MAPVIEW_STRING_PROP(glyph)
+ 
+     REMAP_MAPVIEW_POINT_PROP(calloutOffset)
+     REMAP_MAPVIEW_POINT_PROP(centerOffset)
+diff --git a/ios/generated/RNMapsSpecs/EventEmitters.cpp b/ios/generated/RNMapsSpecs/EventEmitters.cpp
+index 4f929d4098ba563ddac26163016d1923343d5d00..055615547bfe83b740ef5f085b06fee07e17b024 100644
+--- a/ios/generated/RNMapsSpecs/EventEmitters.cpp
++++ b/ios/generated/RNMapsSpecs/EventEmitters.cpp
+@@ -834,6 +834,8 @@ void RNMapsMapViewEventEmitter::onPoiClick(OnPoiClick event) const {
+     auto payload = jsi::Object(runtime);
+     payload.setProperty(runtime, "placeId", event.placeId);
+ payload.setProperty(runtime, "name", event.name);
++payload.setProperty(runtime, "category", event.category);
++payload.setProperty(runtime, "icon", event.icon);
+ {
+   auto coordinate = jsi::Object(runtime);
+   coordinate.setProperty(runtime, "latitude", event.coordinate.latitude);
+diff --git a/ios/generated/RNMapsSpecs/EventEmitters.h b/ios/generated/RNMapsSpecs/EventEmitters.h
+index 99c67d39073ab8deeb27165468c161aa37574cf2..5737356d60ecc07488d52917b417d6a7ea333efb 100644
+--- a/ios/generated/RNMapsSpecs/EventEmitters.h
++++ b/ios/generated/RNMapsSpecs/EventEmitters.h
+@@ -701,6 +701,8 @@ class RNMapsMapViewEventEmitter : public ViewEventEmitter {
+     std::string name;
+     OnPoiClickCoordinate coordinate;
+     OnPoiClickPosition position;
++    std::string category;
++    std::string icon;
+     };
+ 
+   struct OnPressCoordinate {
+diff --git a/ios/generated/RNMapsSpecs/Props.cpp b/ios/generated/RNMapsSpecs/Props.cpp
+index 11d9c5ef41ba44a37333c912859a10c327f2946f..1f45db35364fd5fce9ce0488ee6a9dd95e6ca56f 100644
+--- a/ios/generated/RNMapsSpecs/Props.cpp
++++ b/ios/generated/RNMapsSpecs/Props.cpp
+@@ -767,7 +767,8 @@ RNMapsMarkerProps::RNMapsMarkerProps(
+     pinColor(convertRawProp(context, rawProps, "pinColor", sourceProps.pinColor, {})),
+     titleVisibility(convertRawProp(context, rawProps, "titleVisibility", sourceProps.titleVisibility, {RNMapsMarkerTitleVisibility::Visible})),
+     subtitleVisibility(convertRawProp(context, rawProps, "subtitleVisibility", sourceProps.subtitleVisibility, {RNMapsMarkerSubtitleVisibility::Adaptive})),
+-    useLegacyPinView(convertRawProp(context, rawProps, "useLegacyPinView", sourceProps.useLegacyPinView, {false})) {}
++    useLegacyPinView(convertRawProp(context, rawProps, "useLegacyPinView", sourceProps.useLegacyPinView, {false})),
++    glyph(convertRawProp(context, rawProps, "glyph", sourceProps.glyph, {})) {}
+     
+ #ifdef RN_SERIALIZABLE_STATE
+ ComponentName RNMapsMarkerProps::getDiffPropsImplementationTarget() const {
+@@ -860,6 +861,10 @@ folly::dynamic RNMapsMarkerProps::getDiffProps(
+   if (useLegacyPinView != oldProps->useLegacyPinView) {
+     result["useLegacyPinView"] = useLegacyPinView;
+   }
++
++  if (glyph != oldProps->glyph) {
++    result["glyph"] = glyph;
++  }
+   return result;
+ }
+ #endif
+diff --git a/ios/generated/RNMapsSpecs/Props.h b/ios/generated/RNMapsSpecs/Props.h
+index 5375f09e65c89e503febeaee4fa4984b90a1e574..24af501f99e3bf912b4dd99d8525d32ecef9a671 100644
+--- a/ios/generated/RNMapsSpecs/Props.h
++++ b/ios/generated/RNMapsSpecs/Props.h
+@@ -1914,6 +1914,7 @@ class RNMapsMarkerProps final : public ViewProps {
+   RNMapsMarkerTitleVisibility titleVisibility{RNMapsMarkerTitleVisibility::Visible};
+   RNMapsMarkerSubtitleVisibility subtitleVisibility{RNMapsMarkerSubtitleVisibility::Adaptive};
+   bool useLegacyPinView{false};
++  std::string glyph{};
+ 
+   #ifdef RN_SERIALIZABLE_STATE
+   ComponentName getDiffPropsImplementationTarget() const override;
+diff --git a/src/MapMarker.tsx b/src/MapMarker.tsx
+index 230c9e27f6b131f70fa644f89c52cddbb81a7377..a4c689104650f957b7e79a3f1d0bc9373bd8089e 100644
+--- a/src/MapMarker.tsx
++++ b/src/MapMarker.tsx
+@@ -359,6 +359,14 @@ export type MapMarkerProps = ViewProps & {
+    * @platform Android: Not supported
+    */
+   useLegacyPinView?: boolean;
++
++  /**
++   * The icon in the Marker balloon: "symbol:<SF Symbol name>", or "image:<path>" for an image file
++   * under the app's Documents directory. MapKit tints it white.
++   * @platform iOS: Apple Maps only
++   * @platform Android: Not supported
++   */
++  glyph?: string;
+ };
+ 
+ type OmittedProps = Omit<MapMarkerProps, 'stopPropagation'>;
+diff --git a/src/MapView.types.ts b/src/MapView.types.ts
+index 0832a72f1b1172db6d141939e5bfe9c07e5c545b..1efefd2f3c0cf8ca5503118e3339de8745759e3a 100644
+--- a/src/MapView.types.ts
++++ b/src/MapView.types.ts
+@@ -102,6 +102,12 @@ export type PoiClickEvent = NativeSyntheticEvent<{
+   placeId: string;
+   name: string;
+   coordinate: LatLng;
++  /**
++   * Apple Maps: the point of interest's MKPointOfInterestCategory, and its icon saved as a file
++   * under the app's Documents directory (a path relative to it).
++   */
++  category?: string;
++  icon?: string;
+ 
+   /**
+    * @platform Android
+diff --git a/src/specs/NativeComponentMarker.ts b/src/specs/NativeComponentMarker.ts
+index df1c6121c7cf1bc169bc0a665cfd602172875880..a7d7ba231d0e0dfb24586ed7b8b2dda0eee01425 100644
+--- a/src/specs/NativeComponentMarker.ts
++++ b/src/specs/NativeComponentMarker.ts
+@@ -322,6 +322,14 @@ export interface MarkerFabricNativeProps extends ViewProps {
+    * @platform Android: Not supported
+    */
+   useLegacyPinView?: boolean;
++
++  /**
++   * The icon in the Marker balloon: "symbol:<SF Symbol name>", or "image:<path>" for an image file
++   * under the app's Documents directory. MapKit tints it white.
++   * @platform iOS: Apple Maps only
++   * @platform Android: Not supported
++   */
++  glyph?: string;
+ }
+ export interface NativeCommands {
+   animateToCoordinates: (

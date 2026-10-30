@@ -33,6 +33,7 @@ export const icons = {
   close: { ios: 'xmark.circle.fill', android: 'cancel' },
   xmark: { ios: 'xmark', android: 'close' },
   chevronRight: { ios: 'chevron.right', android: 'chevron_right' },
+  chevronUp: { ios: 'chevron.up', android: 'expand_less' },
   chevronLeft: { ios: 'chevron.left', android: 'chevron_left' },
   circle: { ios: 'circle', android: 'radio_button_unchecked' },
   checkCircle: { ios: 'checkmark.circle.fill', android: 'check_circle' },

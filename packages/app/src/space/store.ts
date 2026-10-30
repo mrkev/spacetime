@@ -34,6 +34,10 @@ export type Place = {
   notes?: string;
   latitude: number;
   longitude: number;
+  /** An icon picked for it (see PlaceIconName), which takes the place of `mapIcon`. */
+  icon?: string;
+  /** Its own icon on Apple's map, if it was saved from there. */
+  mapIcon?: string;
   createdAt: number;
   /** Only on places saved in the Reminders collection by older versions, until they're moved. */
   reminder?: LegacyReminder;

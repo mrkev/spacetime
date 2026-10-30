@@ -16,7 +16,7 @@ import MapView, {
   Circle,
   Marker,
   type LongPressEvent,
-  type MapPressEvent,
+  type PoiClickEvent,
   type Region,
 } from 'react-native-maps';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -24,6 +24,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import { Icon, icons, type IconName } from '../../../components/Icon';
 import { formatRelativeDay } from '../../../lib/dates';
 import {
+  describeCoordinate,
+  distanceMeters,
   searchPlaces,
   searchSuggestion,
   suggestPlaces,
@@ -35,10 +37,15 @@ import {
 import { useNowAction } from '../../../lib/nowAction';
 import { PIN_OFFSET, useTheme, withAlpha, type Theme } from '../../../lib/theme';
 import { loadMapRegion, saveMapRegion } from '../../../space/mapRegion';
+import { PlaceBadge, badgeColor } from '../../../space/PlaceIcon';
 import {
+  LINK_RADIUS,
+  findMapPlace,
   isInCollection,
   pinColor,
   placeCollections,
+  rememberPlace,
+  unsavedPlace,
   useMapPlaces,
   type MapPlace,
 } from '../../../space/places';
@@ -49,13 +56,6 @@ const ALL = 'all';
 const UPCOMING = 'upcoming';
 const USER_DELTA = 0.03;
 const SEARCH_HEIGHT = 46;
-/**
- * Where a selected pin's balloon is drawn, around its tip. MapKit draws it larger than the pin's
- * view, which only takes taps at the base.
- */
-const SELECTED_PIN = { halfWidth: 28, above: 72, below: 8 };
-/** A tap within this long (ms) of a pin being selected is the tap that selected it. */
-const SELECT_GRACE = 500;
 const liquidGlass = isLiquidGlassAvailable();
 
 export default function SpaceScreen() {
@@ -72,8 +72,11 @@ export default function SpaceScreen() {
   const [searching, setSearching] = useState(false);
   const [results, setResults] = useState<PlaceResult[]>([]);
   const [selected, setSelected] = useState(0);
-  // The place whose pin was tapped once. Tapping it again opens it.
+  // The place whose pin is selected. Its pill opens it.
   const [selectedPlaceId, setSelectedPlaceId] = useState<string | null>(null);
+  // A point of interest on Apple's map (a shop, a park) that was tapped, to save as a place.
+  // `at` is where MapKit put it; `place` is the place on the map there, or else an unsaved one.
+  const [poi, setPoi] = useState<{ at: Coordinate; place: MapPlace } | null>(null);
   const [notFound, setNotFound] = useState(false);
   const [locationGranted, setLocationGranted] = useState(false);
   const [initialRegion] = useState(loadMapRegion);
@@ -83,7 +86,6 @@ export default function SpaceScreen() {
   const [mapReady, setMapReady] = useState(false);
   const [userRegion, setUserRegion] = useState<Region | null>(null);
   const centeredOnUser = useRef(false);
-  const selectedAt = useRef(0);
   const [keyboardHeight, setKeyboardHeight] = useState(0);
 
   const inFilter = (id: string) =>
@@ -96,7 +98,10 @@ export default function SpaceScreen() {
   const total = mapPlaces.length;
   const reminderColor =
     collections.find((c) => c.id === REMINDERS_COLLECTION_ID)?.color ?? theme.tint;
-  const selectedPlace = visiblePlaces.find((p) => p.id === selectedPlaceId) ?? null;
+  // The selected pin or point of interest. Once a point of interest is saved, it's found on the map.
+  const selectedPlace =
+    visiblePlaces.find((p) => p.id === selectedPlaceId) ??
+    (poi && (findMapPlace(mapPlaces, poi.place.id, poi.at) ?? poi.place));
   // Todos' geofences, for the selected place or when looking at all of them.
   const fences = (
     filter === REMINDERS_COLLECTION_ID ? visiblePlaces : selectedPlace ? [selectedPlace] : []
@@ -166,25 +171,37 @@ export default function SpaceScreen() {
         longitude: place.longitude,
       });
     }
+    // An unsaved point of interest isn't on the map, so the sheet couldn't find it otherwise.
+    rememberPlace(place);
     router.push({ pathname: '/place/[id]', params: { id: place.id } });
   };
 
-  // MapKit selects a pin on the first tap. It doesn't report taps on a pin that's already
-  // selected, so check whether a tap on the map landed on the selected one.
-  const pressMap = async (e: MapPressEvent) => {
-    Keyboard.dismiss();
-    const place = selectedPlace;
-    if (!place || e.timeStamp - selectedAt.current < SELECT_GRACE) return;
-    const { x, y } = e.nativeEvent.position;
-    const tip = await mapRef.current?.pointForCoordinate(place);
-    if (
-      tip &&
-      Math.abs(x - tip.x) <= SELECTED_PIN.halfWidth &&
-      y >= tip.y - SELECTED_PIN.above &&
-      y <= tip.y + SELECTED_PIN.below
-    ) {
-      openPlace(place);
+  // A spot found on the map stands for the place on the map there, or else is an unsaved place.
+  const placeAt = (at: Coordinate, name: string, address?: string, mapIcon?: string) =>
+    mapPlaces.find((p) => distanceMeters(p, at) <= LINK_RADIUS) ??
+    unsavedPlace(toCoordinate(at), name, address, mapIcon);
+
+  // A point of interest is a shop, park, etc. on Apple's map. MapKit selects and deselects them
+  // like pins.
+  const pressPoi = async (e: PoiClickEvent) => {
+    const { placeId, name, coordinate, icon } = e.nativeEvent;
+    const at = toCoordinate(coordinate);
+    const isIt = (current: { at: Coordinate } | null) =>
+      !!current && current.at.latitude === at.latitude && current.at.longitude === at.longitude;
+    if (placeId === 'deselect') {
+      setPoi((current) => (isIt(current) ? null : current));
+      return;
     }
+    const place = placeAt(at, name, undefined, icon ? `image:${icon}` : undefined);
+    setPoi({ at, place });
+    if (place.saved || place.todos.length > 0 || place.events.length > 0) return;
+    const described = await describeCoordinate(at);
+    if (!described) return;
+    setPoi((current) =>
+      isIt(current) && current
+        ? { at, place: { ...current.place, address: described.address } }
+        : current,
+    );
   };
 
   const goToMyLocation = async () => {
@@ -197,7 +214,9 @@ export default function SpaceScreen() {
   // The tab bar's floating "Here" button.
   useNowAction('space', goToMyLocation);
 
+  // The search result to show, like a selected pin, when nothing else is selected.
   const result = results[selected] ?? null;
+  const pillPlace = selectedPlace ?? (result && placeAt(result, result.name, result.address));
 
   const changeQuery = (text: string) => {
     setQuery(text);
@@ -236,14 +255,13 @@ export default function SpaceScreen() {
     setNotFound(false);
   };
 
-  const addPlaceAt = (coord: Coordinate, prefill?: { name: string; address: string }) => {
+  const addPlaceAt = (coord: Coordinate) => {
     router.push({
       pathname: '/place/new',
       params: {
         latitude: String(coord.latitude),
         longitude: String(coord.longitude),
         ...(filter !== ALL && filter !== UPCOMING ? { collectionId: filter } : {}),
-        ...(prefill ?? {}),
       },
     });
   };
@@ -263,7 +281,8 @@ export default function SpaceScreen() {
           visibleRegion.current = region;
           saveMapRegion(region);
         }}
-        onPress={pressMap}
+        onPress={() => Keyboard.dismiss()}
+        onPoiClick={pressPoi}
         showsUserLocation={locationGranted}
         showsMyLocationButton={false}
         showsCompass={false}
@@ -278,13 +297,11 @@ export default function SpaceScreen() {
               key={`${place.id}:${color}`}
               coordinate={toCoordinate(place)}
               pinColor={color}
+              glyph={place.icon ?? ''}
               centerOffset={PIN_OFFSET}
               accessibilityLabel={place.name}
               // Without a title, selecting it doesn't open a callout.
-              onSelect={(e) => {
-                selectedAt.current = e.timeStamp;
-                setSelectedPlaceId(place.id);
-              }}
+              onSelect={() => setSelectedPlaceId(place.id)}
               onDeselect={() => setSelectedPlaceId((id) => (id === place.id ? null : id))}
             />
           );
@@ -305,13 +322,8 @@ export default function SpaceScreen() {
             coordinate={toCoordinate(found)}
             pinColor={theme.blue}
             centerOffset={PIN_OFFSET}
-            title={found.name}
-            description="Tap to save"
-            onSelect={() => {
-              setSelected(i);
-              setSelectedPlaceId(null);
-            }}
-            onCalloutPress={() => addPlaceAt(found, { name: found.name, address: found.address })}
+            accessibilityLabel={found.name}
+            onSelect={() => setSelected(i)}
           />
         ))}
       </MapView>
@@ -395,45 +407,36 @@ export default function SpaceScreen() {
               ))}
             </ScrollView>
           </Surface>
-        ) : selectedPlace ? (
-          <Pressable onPress={() => openPlace(selectedPlace)}>
-            <Surface style={styles.resultCard}>
+        ) : pillPlace ? (
+          <Pressable
+            onPress={() => openPlace(pillPlace)}
+            accessibilityRole="button"
+            accessibilityHint="Opens the place"
+            style={({ pressed }) => pressed && styles.pressed}
+          >
+            {/* Drawn like the top of a sheet, which it opens into. */}
+            <Surface style={[styles.resultCard, styles.pill]}>
+              <View style={[styles.grabber, { backgroundColor: theme.tertiaryText }]} />
+              <PlaceBadge icon={pillPlace.icon} color={badgeColor(pillPlace, collections, theme)} />
               <View style={{ flex: 1 }}>
                 <Text style={[styles.resultName, { color: theme.text }]} numberOfLines={1}>
-                  {selectedPlace.name}
+                  {pillPlace.name}
                 </Text>
                 <Text
                   style={[styles.resultAddress, { color: theme.secondaryText }]}
                   numberOfLines={1}
                 >
-                  {describePlace(selectedPlace, collections)}
+                  {describePlace(pillPlace, collections)}
                 </Text>
               </View>
-              <Icon name={icons.chevronRight} color={theme.tertiaryText} size={14} />
+              <Icon
+                name={icons.chevronUp}
+                color={theme.secondaryText}
+                size={14}
+                weight="semibold"
+              />
             </Surface>
           </Pressable>
-        ) : result ? (
-          <Surface style={styles.resultCard}>
-            <View style={{ flex: 1 }}>
-              <Text style={[styles.resultName, { color: theme.text }]} numberOfLines={1}>
-                {result.name}
-              </Text>
-              {result.address ? (
-                <Text
-                  style={[styles.resultAddress, { color: theme.secondaryText }]}
-                  numberOfLines={1}
-                >
-                  {result.address}
-                </Text>
-              ) : null}
-            </View>
-            <Pressable
-              onPress={() => addPlaceAt(result, { name: result.name, address: result.address })}
-              style={[styles.saveButton, { backgroundColor: theme.blue }]}
-            >
-              <Text style={styles.saveLabel}>Save</Text>
-            </Pressable>
-          </Surface>
         ) : notFound || total === 0 ? (
           <Surface style={styles.hint} pointerEvents="none">
             <Text style={[styles.hintText, { color: theme.secondaryText }]}>
@@ -533,7 +536,7 @@ function Surface({ style, ...props }: React.ComponentProps<typeof View>) {
 }
 
 /**
- * Its collections, its next event, and how many todos it has, e.g.
+ * Its collections (or address, if it's in none), its next event, and how many todos it has, e.g.
  * "Favorites, Food · Dinner, Tomorrow · 2 todos".
  */
 function describePlace(place: MapPlace, collections: Collection[]): string {
@@ -541,7 +544,7 @@ function describePlace(place: MapPlace, collections: Collection[]): string {
   const todos = place.todos.length;
   const [next] = place.events;
   return [
-    names.length > 0 ? names.join(', ') : 'Not saved',
+    names.length > 0 ? names.join(', ') : place.address || 'Not saved',
     next ? `${next.title}, ${formatRelativeDay(next.start)}` : null,
     todos > 0 ? `${todos} ${todos === 1 ? 'todo' : 'todos'}` : null,
   ]
@@ -603,8 +606,18 @@ const styles = StyleSheet.create({
   },
   resultName: { fontSize: 17, fontWeight: '600' },
   resultAddress: { fontSize: 13, marginTop: 2 },
-  saveButton: { paddingHorizontal: 18, paddingVertical: 9, borderRadius: 18 },
-  saveLabel: { color: '#fff', fontWeight: '600', fontSize: 15 },
+  pill: { paddingTop: 18 },
+  grabber: {
+    position: 'absolute',
+    top: 6,
+    left: '50%',
+    marginLeft: -18,
+    width: 36,
+    height: 5,
+    borderRadius: 2.5,
+    opacity: 0.6,
+  },
+  pressed: { transform: [{ scale: 0.98 }], opacity: 0.9 },
   hint: {
     alignSelf: 'center',
     paddingHorizontal: 14,

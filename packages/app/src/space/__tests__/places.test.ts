@@ -14,6 +14,8 @@ import {
   isInCollection,
   parseLocationTitle,
   pinColor,
+  rememberPlace,
+  unsavedPlace,
 } from '../places';
 import { REMINDERS_COLLECTION_ID, type Collection, type Place } from '../store';
 
@@ -115,6 +117,14 @@ describe('findMapPlace', () => {
     expect(findMapPlace(after, before[0].id)?.id).toBe('bakery');
   });
 
+  it('finds a remembered place that isn’t on the map, until one is saved there', () => {
+    const shop = unsavedPlace(elsewhere, 'Shop');
+    rememberPlace(shop);
+    expect(findMapPlace(buildMapPlaces([], []), shop.id)).toBe(shop);
+    const saved = buildMapPlaces([place('shop', ['food'], elsewhere)], []);
+    expect(findMapPlace(saved, shop.id)?.id).toBe('shop');
+  });
+
   it('falls back to the place nearest where it was', () => {
     const mapPlaces = buildMapPlaces([place('bakery', ['food'])], []);
     expect(findMapPlace(mapPlaces, 'gone', nearBakery)?.id).toBe('bakery');
@@ -135,6 +145,15 @@ describe('pinColor', () => {
   it('uses the next event’s calendar for an unsaved place with only events', () => {
     const [place] = buildMapPlaces([], [], [event('dinner', bakery)]);
     expect(pinColor(place, collections, '#000')).toBe('#AF52DE');
+  });
+});
+
+describe('icons', () => {
+  it('uses a picked icon over the place’s own from Apple Maps', () => {
+    const own = { ...place('bakery', ['food']), mapIcon: 'image:place-icons/a@3x.png' };
+    expect(buildMapPlaces([own], [])[0].icon).toBe('image:place-icons/a@3x.png');
+    const picked = { ...own, icon: 'symbol:birthday.cake.fill' };
+    expect(buildMapPlaces([picked], [])[0].icon).toBe('symbol:birthday.cake.fill');
   });
 });
 
