@@ -8,7 +8,10 @@ struct RootView: View {
     @State private var selection = AppTab.space
 
     var body: some View {
-        TabView(selection: $selection) {
+        TabView(selection: Binding(get: { selection }, set: { next in
+            if next == selection { reselect(next) }
+            selection = next
+        })) {
             Tab("Space", systemImage: "map", value: AppTab.space) {
                 SpaceView()
             }
@@ -45,6 +48,13 @@ struct RootView: View {
             }
         }
         .task { await LegacyReminderMigration.run(space: model.space, calendar: model.calendar) }
+    }
+
+    /// The selected tab tapped again, after the tab bar has popped to its first screen. The tab bar
+    /// then scrolls that screen to the top, which for the year view is ten years back, so the Time
+    /// tab scrolls on to this year instead, as Today does.
+    private func reselect(_ tab: AppTab) {
+        if tab == .time && model.time.path.isEmpty { model.runNowAction() }
     }
 
     private var nowTabRole: TabRole? {

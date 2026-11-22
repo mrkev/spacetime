@@ -41,6 +41,7 @@ struct MonthView: View {
                     }
                 }
                 .scrollTargetLayout()
+                .noScrollToTop()
             }
             .scrollPosition(id: $position, anchor: .top)
             .scrollIndicators(.hidden)

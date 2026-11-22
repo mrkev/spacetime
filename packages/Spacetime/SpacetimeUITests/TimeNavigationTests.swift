@@ -20,7 +20,14 @@ final class TimeNavigationTests: XCTestCase {
         app.buttons["Time"].tap()
         // Today, in the month view (wherever the Time tab was left).
         app.buttons["Today"].tap()
-        if !app.buttons["Reminders"].firstMatch.waitForExistence(timeout: 3) { back(app) }
+        let formatter = DateFormatter()
+        formatter.setLocalizedDateFormatFromTemplate("MMMMyyyy")
+        let month = app.buttons[formatter.string(from: Date())]
+        if !app.buttons["Reminders"].firstMatch.waitForExistence(timeout: 3) {
+            back(app)
+        } else if month.waitForExistence(timeout: 2) {
+            month.tap()
+        }
         let today = DateFormatter.localizedString(from: Date(), dateStyle: .full, timeStyle: .none)
         XCTAssert(app.buttons[today].waitForExistence(timeout: 5), "No button for \(today)")
 
@@ -39,9 +46,6 @@ final class TimeNavigationTests: XCTestCase {
         XCTAssert(app.buttons["Add"].firstMatch.waitForExistence(timeout: 5))
         back(app)
         back(app)
-        let formatter = DateFormatter()
-        formatter.setLocalizedDateFormatFromTemplate("MMMMyyyy")
-        let month = app.buttons[formatter.string(from: Date())]
         XCTAssert(month.waitForExistence(timeout: 5))
         month.tap()
         XCTAssert(app.buttons[today].waitForExistence(timeout: 5))

@@ -89,6 +89,18 @@ extension View {
         }
     }
 
+    /// Keeps the scroll view this is inside from scrolling to its top when the status bar is tapped,
+    /// for a list that starts years back, whose top isn't somewhere to go. Apply it to the scroll
+    /// view's content. (Tapping the selected tab scrolls to the top anyway; see `RootView.reselect`.)
+    @ViewBuilder
+    func noScrollToTop() -> some View {
+        #if os(iOS)
+        background(NoScrollToTop())
+        #else
+        self
+        #endif
+    }
+
     /// A small title in the navigation bar on iOS. The Mac has only the one kind.
     @ViewBuilder
     func inlineNavigationTitle() -> some View {
@@ -149,3 +161,25 @@ struct GlassGroup<Content: View>: View {
         }
     }
 }
+
+#if os(iOS)
+/// Turns off `scrollsToTop` on the scroll view it's in, once it's in a window.
+private struct NoScrollToTop: UIViewRepresentable {
+    final class Probe: UIView {
+        override func didMoveToWindow() {
+            super.didMoveToWindow()
+            var view = superview
+            while let current = view, !(current is UIScrollView) { view = current.superview }
+            (view as? UIScrollView)?.scrollsToTop = false
+        }
+    }
+
+    func makeUIView(context: Context) -> Probe {
+        let probe = Probe()
+        probe.isUserInteractionEnabled = false
+        return probe
+    }
+
+    func updateUIView(_ uiView: Probe, context: Context) {}
+}
+#endif

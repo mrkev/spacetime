@@ -20,35 +20,40 @@ struct YearView: View {
 
     var body: some View {
         let nav = model.time
-        ScrollView {
-            LazyVStack(spacing: 0) {
-                ForEach(-yearsBefore...yearsAfter, id: \.self) { offset in
-                    YearItem(year: Calendar.current.component(.year, from: today) + offset, today: today) { month in
-                        nav.path.append(.month(month))
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    ForEach(-yearsBefore...yearsAfter, id: \.self) { offset in
+                        YearItem(year: Calendar.current.component(.year, from: today) + offset, today: today) { month in
+                            nav.path.append(.month(month))
+                        }
+                        .frame(height: yearHeight)
                     }
-                    .frame(height: yearHeight)
                 }
+                .scrollTargetLayout()
+                .noScrollToTop()
             }
-            .scrollTargetLayout()
-        }
-        .scrollPosition(id: $position, anchor: .top)
-        .scrollIndicators(.hidden)
-        .background(Theme.background)
-        // Like Calendar, the month view's back button shows the year it's showing.
-        .navigationTitle(String(nav.monthViewYear))
-        .inlineNavigationTitle()
-        .toolbar {
-            ToolbarItem(placement: .principal) { Text("") }
-            TimeToolbar(onNewReminder: { newReminder = NewReminderRequest(date: $0) })
-        }
-        .sizedSheet(item: $newReminder) { request in
-            NavigationStack { ReminderEditorView(date: request.date) }
-        }
-        .onAppear { if nav.path.isEmpty { TimeNavigation.remember(.year) } }
-        .onChange(of: nav.path.isEmpty) { _, top in if top { TimeNavigation.remember(.year) } }
-        .onChange(of: model.todayRequests) {
-            guard nav.isTop(nil) else { return }
-            withAnimation { position = 0 }
+            .scrollPosition(id: $position, anchor: .top)
+            .scrollIndicators(.hidden)
+            .background(Theme.background)
+            // Like Calendar, the month view's back button shows the year it's showing.
+            .navigationTitle(String(nav.monthViewYear))
+            .inlineNavigationTitle()
+            .toolbar {
+                ToolbarItem(placement: .principal) { Text("") }
+                TimeToolbar(onNewReminder: { newReminder = NewReminderRequest(date: $0) })
+            }
+            .sizedSheet(item: $newReminder) { request in
+                NavigationStack { ReminderEditorView(date: request.date) }
+            }
+            .onAppear { if nav.path.isEmpty { TimeNavigation.remember(.year) } }
+            .onChange(of: nav.path.isEmpty) { _, top in if top { TimeNavigation.remember(.year) } }
+            .onChange(of: model.todayRequests) {
+                guard nav.isTop(nil) else { return }
+                // Through the proxy, which scrolls even when `position` is already 0: the tab bar scrolls
+                // to the top when Time is tapped again, without changing `position` until it's done.
+                withAnimation { proxy.scrollTo(0, anchor: .top) }
+            }
         }
     }
 }
