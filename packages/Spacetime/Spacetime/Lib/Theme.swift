@@ -35,7 +35,7 @@ enum Theme {
     static let alarm = Color.orange
 
     static let tintHex = "#FF3B30"
-    static let blueHex = "#007AFF"
+    nonisolated static let blueHex = "#007AFF"
 }
 
 /// Colors collections can pick for their pins.

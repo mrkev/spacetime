@@ -18,7 +18,9 @@ nonisolated struct EventLocation: Hashable, Sendable, Located {
     }
 }
 
-struct CalendarEvent: Identifiable, Hashable {
+/// An occurrence of an event, as read from EventKit. To show or change it, `CalendarStore.ekEvent(for:)`
+/// finds the EventKit object again.
+nonisolated struct CalendarEvent: Identifiable, Hashable, Sendable {
     /// Unique per occurrence, so recurring events get distinct keys.
     var key: String
     var title: String
@@ -36,13 +38,38 @@ struct CalendarEvent: Identifiable, Hashable {
     /// The event's ID, the same for every occurrence.
     var eventId: String
     var calendarId: String
-    var ek: EKEvent?
 
     var id: String { key }
 
     /// Unique per occurrence, so recurring events get distinct keys.
     static func key(eventId: String, start: Date) -> String {
         "\(eventId):\(Int((start.timeIntervalSince1970 * 1000).rounded()))"
+    }
+}
+
+extension CalendarEvent {
+    /// Reads an occurrence, on whichever thread its store is used on.
+    nonisolated init?(_ e: EKEvent) {
+        guard let start = e.startDate else { return nil }
+        let end = e.endDate ?? start
+        let eventId = e.eventIdentifier ?? e.calendarItemIdentifier
+        let calendar = e.calendar
+        var place: EventLocation?
+        if let structured = e.structuredLocation, let geo = structured.geoLocation {
+            place = EventLocation(title: structured.title ?? "", latitude: geo.coordinate.latitude,
+                                  longitude: geo.coordinate.longitude)
+        }
+        let location = e.location?.isEmpty == false ? e.location : nil
+        self.init(
+            key: CalendarEvent.key(eventId: eventId, start: start),
+            title: e.title?.isEmpty == false ? e.title! : "New Event",
+            start: start, end: end, allDay: e.isAllDay,
+            color: calendar.map { Hex.string(from: $0.cgColor) } ?? Theme.blueHex,
+            calendarTitle: calendar?.title ?? "",
+            location: location, place: place,
+            editable: calendar?.allowsContentModifications ?? false,
+            recurring: e.hasRecurrenceRules,
+            eventId: eventId, calendarId: calendar?.calendarIdentifier ?? "")
     }
 }
 
@@ -100,6 +127,53 @@ nonisolated struct RecentKeys {
 /// How far ahead events show at their places on the map.
 let upcomingDays = 30
 
+/// Reads events away from the main thread, so scrolling and saving don't wait on EventKit. It has its own
+/// event store, since a store and the events it returns aren't safe to share across threads.
+actor EventReader {
+    private var store = EKEventStore()
+    private var generation = 0
+
+    /// Each month's events, by month key and then day key, plus the next `upcomingDays` days' events if
+    /// asked. A newer `generation` (a reload, after a change) starts from a new store, so nothing cached
+    /// from before the change is read.
+    func read(months: [Date], upcomingDays: Int? = nil, generation: Int)
+        -> (months: [String: [String: [CalendarEvent]]], upcoming: [CalendarEvent]) {
+        if generation > self.generation {
+            self.generation = generation
+            store = EKEventStore()
+        }
+        var loaded: [String: [String: [CalendarEvent]]] = [:]
+        for month in months { loaded[Dates.monthKey(month)] = read(month: month) }
+        return (loaded, upcomingDays.map(readUpcoming) ?? [])
+    }
+
+    private func read(month: Date) -> [String: [CalendarEvent]] {
+        let start = Dates.startOfMonth(month)
+        let end = Dates.addMonths(month, 1)
+        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: nil)
+        var days: [String: [CalendarEvent]] = [:]
+        for ek in store.events(matching: predicate) {
+            guard let event = CalendarEvent(ek) else { continue }
+            // Add multi-day events to every day they touch (within this month).
+            let lastMoment = max(event.start, event.end.addingTimeInterval(-0.001))
+            var day = Dates.startOfDay(event.start)
+            while day <= lastMoment && day < end {
+                if day >= start { days[Dates.dayKey(day), default: []].append(event) }
+                day = Dates.addDays(day, 1)
+            }
+        }
+        for key in days.keys { days[key]!.sort { $0.start < $1.start } }
+        return days
+    }
+
+    private func readUpcoming(days: Int) -> [CalendarEvent] {
+        let now = Date()
+        let end = Dates.addDays(Dates.startOfDay(now), days + 1)
+        let predicate = store.predicateForEvents(withStart: now, end: end, calendars: nil)
+        return store.events(matching: predicate).compactMap(CalendarEvent.init)
+    }
+}
+
 /// The events and reminders already on the phone, through EventKit.
 @Observable
 final class CalendarStore {
@@ -123,6 +197,11 @@ final class CalendarStore {
     /// The months asked for lately, which stay loaded. A refresh, after every change, reloads them, so
     /// only the most recent are kept: those around the screens you've just been looking at.
     @ObservationIgnored private var requested = RecentKeys(limit: 24)
+    @ObservationIgnored private let reader = EventReader()
+    /// Bumped by each reload; months read before the latest one are out of date.
+    @ObservationIgnored private var generation = 0
+    /// Months being read, so each is only asked for once.
+    @ObservationIgnored private var loading = Set<String>()
     @ObservationIgnored private var reminderGeneration = 0
     @ObservationIgnored private var pendingRefresh: Task<Void, Never>?
 
@@ -185,27 +264,48 @@ final class CalendarStore {
         }
     }
 
-    /// Reloads what's on screen: the loaded months, upcoming events, and reminders.
+    /// Reloads what's on screen: the loaded months, upcoming events, and reminders. What's showing
+    /// stays until the new events are read.
     func refresh() {
-        var next: [String: [String: [CalendarEvent]]] = [:]
-        if status == .granted {
-            for key in requested.keys {
-                if let month = Dates.parseMonthKey(key) { next[key] = fetchMonth(month) }
-            }
-        }
-        monthEvents = next
-        upcomingEvents = nextOccurrences(fetchUpcoming()).filter { $0.place != nil }
+        generation += 1
+        loading = []
         loadReminders()
+        guard status == .granted else {
+            monthEvents = [:]
+            upcomingEvents = []
+            return
+        }
+        let generation = generation
+        let months = requested.keys.compactMap(Dates.parseMonthKey)
+        Task {
+            let read = await reader.read(months: months, upcomingDays: upcomingDays, generation: generation)
+            guard generation == self.generation else { return }
+            // Months asked for since this began were read on their own.
+            var next = monthEvents.filter { requested.keys.contains($0.key) }
+            next.merge(read.months) { $1 }
+            monthEvents = next
+            upcomingEvents = Self.nextOccurrences(read.upcoming).filter { $0.place != nil }
+        }
     }
 
-    /// Kicks off loading the months around `date` (no-op if cached).
+    /// Starts reading the months around `date`, unless they're read or being read.
     func ensureMonths(_ date: Date, radius: Int = 1) {
         guard status == .granted else { return }
+        var needed: [Date] = []
         for offset in -radius...radius {
             let month = Dates.addMonths(date, offset)
             let key = Dates.monthKey(month)
             for dropped in requested.use(key) { monthEvents[dropped] = nil }
-            if monthEvents[key] == nil { monthEvents[key] = fetchMonth(month) }
+            if monthEvents[key] == nil && loading.insert(key).inserted { needed.append(month) }
+        }
+        guard !needed.isEmpty else { return }
+        let generation = generation
+        Task {
+            let read = await reader.read(months: needed, generation: generation)
+            // A reload since this began reads these months again.
+            guard generation == self.generation else { return }
+            loading.subtract(read.months.keys)
+            for (key, days) in read.months where requested.keys.contains(key) { monthEvents[key] = days }
         }
     }
 
@@ -216,41 +316,15 @@ final class CalendarStore {
         return DayItems(events: month[key] ?? [], reminders: datedReminders[key] ?? [])
     }
 
-    private func fetchMonth(_ month: Date) -> [String: [CalendarEvent]] {
-        guard !eventCalendars.isEmpty else { return [:] }
-        let start = Dates.startOfMonth(month)
-        let end = Dates.addMonths(month, 1)
-        let predicate = store.predicateForEvents(withStart: start, end: end, calendars: eventCalendars)
-        var days: [String: [CalendarEvent]] = [:]
-        for ek in store.events(matching: predicate) {
-            guard let event = toEvent(ek) else { continue }
-            // Add multi-day events to every day they touch (within this month).
-            let lastMoment = max(event.start, event.end.addingTimeInterval(-0.001))
-            var day = Dates.startOfDay(event.start)
-            while day <= lastMoment && day < end {
-                if day >= start { days[Dates.dayKey(day), default: []].append(event) }
-                day = Dates.addDays(day, 1)
-            }
-        }
-        for key in days.keys { days[key]!.sort { $0.start < $1.start } }
-        return days
-    }
-
-    private func fetchUpcoming() -> [CalendarEvent] {
-        guard !eventCalendars.isEmpty else { return [] }
-        let now = Date()
-        let end = Dates.addDays(Dates.startOfDay(now), upcomingDays + 1)
-        let predicate = store.predicateForEvents(withStart: now, end: end, calendars: eventCalendars)
-        return store.events(matching: predicate).compactMap(toEvent)
-    }
-
     /// The next occurrence of every event in the coming `upcomingDays`, soonest first.
-    func listUpcomingEvents() -> [CalendarEvent] {
-        nextOccurrences(fetchUpcoming())
+    func listUpcomingEvents() async -> [CalendarEvent] {
+        guard status == .granted else { return [] }
+        let read = await reader.read(months: [], upcomingDays: upcomingDays, generation: generation)
+        return Self.nextOccurrences(read.upcoming)
     }
 
     /// The next occurrence of each event that hasn't ended, soonest first.
-    private func nextOccurrences(_ events: [CalendarEvent]) -> [CalendarEvent] {
+    private static func nextOccurrences(_ events: [CalendarEvent]) -> [CalendarEvent] {
         let now = Date()
         var next: [String: CalendarEvent] = [:]
         for event in events where event.end > now {
@@ -258,6 +332,17 @@ final class CalendarStore {
             next[event.eventId] = event
         }
         return next.values.sorted { $0.start < $1.start }
+    }
+
+    /// The EventKit occurrence behind `event`, from this store, to show or change. (Events are read
+    /// with another store, on another thread.)
+    func ekEvent(for event: CalendarEvent) -> EKEvent? {
+        guard status == .granted else { return nil }
+        let end = max(event.end, event.start.addingTimeInterval(60))
+        let predicate = store.predicateForEvents(withStart: event.start, end: end, calendars: nil)
+        return store.events(matching: predicate).first {
+            ($0.eventIdentifier ?? $0.calendarItemIdentifier) == event.eventId && $0.startDate == event.start
+        }
     }
 
     private func loadReminders() {
@@ -297,29 +382,6 @@ final class CalendarStore {
     }
 
     // MARK: Conversion
-
-    func toEvent(_ e: EKEvent) -> CalendarEvent? {
-        guard let start = e.startDate else { return nil }
-        let end = e.endDate ?? start
-        let eventId = e.eventIdentifier ?? e.calendarItemIdentifier
-        let calendar = e.calendar
-        var place: EventLocation?
-        if let structured = e.structuredLocation, let geo = structured.geoLocation {
-            place = EventLocation(title: structured.title ?? "", latitude: geo.coordinate.latitude,
-                                  longitude: geo.coordinate.longitude)
-        }
-        let location = e.location?.isEmpty == false ? e.location : nil
-        return CalendarEvent(
-            key: CalendarEvent.key(eventId: eventId, start: start),
-            title: e.title?.isEmpty == false ? e.title! : "New Event",
-            start: start, end: end, allDay: e.isAllDay,
-            color: calendar.map { Hex.string(from: $0.cgColor) } ?? Theme.blueHex,
-            calendarTitle: calendar?.title ?? "",
-            location: location, place: place,
-            editable: calendar?.allowsContentModifications ?? false,
-            recurring: e.hasRecurrenceRules,
-            eventId: eventId, calendarId: calendar?.calendarIdentifier ?? "", ek: e)
-    }
 
     func toReminder(_ r: EKReminder) -> CalendarReminder? {
         let components = r.dueDateComponents ?? r.startDateComponents

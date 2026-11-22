@@ -16,16 +16,16 @@ struct CopiedEvent {
     var alarms: [EKAlarm]
     var availability: EKEventAvailability
 
-    init(_ event: CalendarEvent) {
+    init(_ event: CalendarEvent, ek: EKEvent?) {
         title = event.title
         durationMinutes = Int((event.end.timeIntervalSince(event.start) / 60).rounded())
         calendarId = event.calendarId
         location = event.location
         place = event.place
-        notes = event.ek?.notes
-        url = event.ek?.url
-        alarms = (event.ek?.alarms ?? []).compactMap { $0.copy() as? EKAlarm }
-        availability = event.ek?.availability ?? .busy
+        notes = ek?.notes
+        url = ek?.url
+        alarms = (ek?.alarms ?? []).compactMap { $0.copy() as? EKAlarm }
+        availability = ek?.availability ?? .busy
     }
 }
 
@@ -109,7 +109,7 @@ enum TimeActions {
 
     /// Shows an event's details, where it can be edited or deleted, like in Calendar.
     static func openEvent(_ event: CalendarEvent, calendar: CalendarStore) {
-        guard let ek = event.ek, calendar.store.event(withIdentifier: event.eventId) != nil else {
+        guard let ek = calendar.ekEvent(for: event) else {
             Presenter.alert(title: "Couldn’t Open Event", message: "It may have been deleted. Try again in a moment.")
             calendar.refresh()
             return
@@ -133,7 +133,9 @@ enum TimeActions {
 
     /// Saves new times for a dragged event. Returns false if it wasn't saved.
     static func reschedule(_ event: CalendarEvent, start: Date, end: Date, calendar: CalendarStore) async -> Bool {
-        guard let ek = event.ek, let span = await chooseSpan(event, verb: "Save") else { return false }
+        guard let ek = calendar.ekEvent(for: event), let span = await chooseSpan(event, verb: "Save") else {
+            return false
+        }
         do {
             ek.startDate = start
             ek.endDate = end
@@ -150,7 +152,9 @@ enum TimeActions {
 
     @discardableResult
     static func delete(_ event: CalendarEvent, calendar: CalendarStore) async -> Bool {
-        guard let ek = event.ek, let span = await chooseSpan(event, verb: "Delete") else { return false }
+        guard let ek = calendar.ekEvent(for: event), let span = await chooseSpan(event, verb: "Delete") else {
+            return false
+        }
         do {
             try calendar.store.remove(ek, span: span.ek, commit: true)
             calendar.refresh()
@@ -162,12 +166,12 @@ enum TimeActions {
         }
     }
 
-    static func copy(_ event: CalendarEvent) {
-        clipboard = CopiedEvent(event)
+    static func copy(_ event: CalendarEvent, calendar: CalendarStore) {
+        clipboard = CopiedEvent(event, ek: calendar.ekEvent(for: event))
     }
 
     static func cut(_ event: CalendarEvent, calendar: CalendarStore) async {
-        copy(event)
+        copy(event, calendar: calendar)
         await delete(event, calendar: calendar)
     }
 
@@ -177,7 +181,7 @@ enum TimeActions {
 
     /// Calendar puts the duplicate at the same time, alongside the original.
     static func duplicate(_ event: CalendarEvent, calendar: CalendarStore) {
-        insert(CopiedEvent(event), at: event.start, calendar: calendar)
+        insert(CopiedEvent(event, ek: calendar.ekEvent(for: event)), at: event.start, calendar: calendar)
     }
 
     private static func insert(_ copied: CopiedEvent, at start: Date, calendar: CalendarStore) {
@@ -207,7 +211,7 @@ enum TimeActions {
     /// Sets (or with nil, clears) where an event is, for the span picked.
     static func setPlace(_ location: EventLocation?, of event: CalendarEvent, span: Span,
                          calendar: CalendarStore) throws {
-        guard let ek = event.ek else { return }
+        guard let ek = calendar.ekEvent(for: event) else { return }
         ek.location = location?.title
         ek.structuredLocation = location?.structuredLocation
         try calendar.store.save(ek, span: span.ek, commit: true)

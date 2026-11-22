@@ -280,7 +280,7 @@ struct EventPickerView: View {
                 ToolbarItem(placement: .confirmationAction) { ProgressView() }
             }
         }
-        .task { events = calendar.listUpcomingEvents() }
+        .task { events = await calendar.listUpcomingEvents() }
     }
 
     private func pick(_ event: CalendarEvent) async {

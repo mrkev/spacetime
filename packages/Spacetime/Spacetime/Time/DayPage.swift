@@ -342,7 +342,7 @@ struct DayPage: View {
             func done(_ action: @escaping (CalendarEvent) -> Void) -> () -> Void {
                 { actions.select(nil); action(event) }
             }
-            let copy = EditMenu.Item(label: "Copy", action: done { TimeActions.copy($0) })
+            let copy = EditMenu.Item(label: "Copy", action: done { TimeActions.copy($0, calendar: calendar) })
             let duplicate = EditMenu.Item(label: "Duplicate", action: done { TimeActions.duplicate($0, calendar: calendar) })
             let menuItems = event.editable
                 ? [
