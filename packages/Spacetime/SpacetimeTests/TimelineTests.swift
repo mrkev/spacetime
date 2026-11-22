@@ -176,3 +176,35 @@ struct DayTimelineTests {
         #expect(timeline.allDayEvents.isEmpty && timeline.allDayReminders.isEmpty && timeline.timed.isEmpty)
     }
 }
+
+@MainActor
+struct TimelineGestureTests {
+    @Test func dragsABlockByWholeQuarterHoursOfFingerTravel() {
+        let drag = BlockDrag(mode: .move, origin: MinuteRange(startMinute: 540, endMinute: 600), startY: 300)
+        // 60 points an hour: 32 points is 32 minutes, which snaps to 30.
+        #expect(drag.range(atY: 332, hourHeight: 60) == MinuteRange(startMinute: 570, endMinute: 630))
+        #expect(drag.range(atY: 305, hourHeight: 60) == MinuteRange(startMinute: 540, endMinute: 600))
+        let end = BlockDrag(mode: .end, origin: MinuteRange(startMinute: 540, endMinute: 600), startY: 300)
+        #expect(end.range(atY: 330, hourHeight: 60) == MinuteRange(startMinute: 540, endMinute: 630))
+    }
+
+    @Test func keepsTheMinuteUnderTheFingersWhilePinching() {
+        let pinch = TimelinePinch(hourHeight: 60, scrollY: 400, focalY: 200)
+        let height = pinch.hourHeight(scale: 2)
+        #expect(height == 120)
+        let minuteUnderFingers = (pinch.scrollY(hourHeight: height) + 200 - Timeline.padding) / height * 60
+        #expect(abs(Double(minuteUnderFingers) - pinch.minute) < 0.001)
+    }
+
+    @Test func zoomsOnlyWithinTheLimits() {
+        let pinch = TimelinePinch(hourHeight: 60, scrollY: 0, focalY: 0)
+        #expect(pinch.hourHeight(scale: 10) == Timeline.maxHourHeight)
+        #expect(pinch.hourHeight(scale: 0.1) == Timeline.minHourHeight)
+    }
+
+    @Test func keepsTheTimeAtTheTopWhenTheHoursChangeHeight() {
+        // 9 AM at the top at 60 points an hour is still at the top at 30.
+        let y = Timeline.padding + 9 * 60
+        #expect(Timeline.scrollY(y, rescaledFrom: 60, to: 30) == Timeline.padding + 9 * 30)
+    }
+}

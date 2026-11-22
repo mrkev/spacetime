@@ -161,11 +161,7 @@ struct DayView: View {
                             hourHeight: $hourHeight,
                             scrollToNow: scrollToNow,
                             selectedKey: selection?.day == key ? selection?.key : nil,
-                            onSelect: { selection = $0.map { TimelineSelection(key: $0, day: key) } },
-                            onGestureActive: { gestureActive = $0 },
-                            onZoomEnd: { FileStorage.shared.set(String(Double(hourHeight)), forKey: zoomKey) },
-                            onPressReminder: { openReminder = $0 },
-                            onSetPlace: { event, span in eventPlace = EventPlaceRequest(event: event, span: span) })
+                            actions: pageActions(dayKey: key))
                             .containerRelativeFrame(.horizontal)
                     }
                 }
@@ -176,6 +172,15 @@ struct DayView: View {
             .scrollIndicators(.hidden)
             .scrollDisabled(gestureActive)
         }
+    }
+
+    private func pageActions(dayKey: String) -> DayPageActions {
+        DayPageActions(
+            select: { selection = $0.map { TimelineSelection(key: $0, day: dayKey) } },
+            gestureActive: { gestureActive = $0 },
+            zoomEnded: { FileStorage.shared.set(String(Double(hourHeight)), forKey: zoomKey) },
+            pressReminder: { openReminder = $0 },
+            setPlace: { event, span in eventPlace = EventPlaceRequest(event: event, span: span) })
     }
 
     /// The days as one timeline, starting where the day page was scrolled to and keeping the day
