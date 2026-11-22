@@ -31,12 +31,6 @@ enum Timeline {
     }
 }
 
-private enum Entry {
-    case event(CalendarEvent)
-    case reminder(CalendarReminder)
-    case alarm(SpacetimeAlarm)
-}
-
 /// Where a dragged event is drawn until the calendar reloads with its saved times. `basis` is the
 /// day's data at drag time; once that's replaced, the draft is stale and the real times show.
 private struct Draft {
@@ -116,7 +110,7 @@ struct DayPage: View {
 
     var body: some View {
         let items = calendar.day(date)
-        let split = splitDay(items)
+        let split = dayTimeline(items)
         VStack(spacing: 0) {
             if !split.allDayEvents.isEmpty || !split.allDayReminders.isEmpty {
                 allDayArea(split.allDayEvents, split.allDayReminders)
@@ -167,46 +161,12 @@ struct DayPage: View {
 
     // MARK: Layout
 
-    private func splitDay(_ items: DayItems?) -> (allDayEvents: [CalendarEvent], allDayReminders: [CalendarReminder],
-                                                  timed: [PositionedItem<Entry>]) {
-        let dayStart = Dates.startOfDay(date)
-        let dayEnd = Dates.addDays(dayStart, 1)
-        var allDayEvents: [CalendarEvent] = []
-        var allDayReminders: [CalendarReminder] = []
-        var timed: [(key: String, range: MinuteRange, item: Entry)] = []
-        for event in items?.events ?? [] {
-            // Events spanning the whole day (or flagged all-day) go in the all-day area.
-            if event.allDay || (event.start <= dayStart && event.end >= dayEnd) {
-                allDayEvents.append(event)
-                continue
-            }
-            let start = event.start < dayStart ? 0 : Double(Dates.minutesIntoDay(event.start))
-            let end = event.end >= dayEnd ? 24 * 60 : Double(Dates.minutesIntoDay(event.end))
-            timed.append((event.key, MinuteRange(startMinute: start, endMinute: end), .event(event)))
-        }
-        for reminder in items?.reminders ?? [] {
-            guard let due = reminder.due, !reminder.allDay else {
-                allDayReminders.append(reminder)
-                continue
-            }
-            // The time the block covers at this zoom, so overlaps are laid out side by side.
-            let start = Double(Dates.minutesIntoDay(due))
-            timed.append((reminder.key,
-                          MinuteRange(startMinute: start,
-                                      endMinute: start + Double((Timeline.reminderHeight + 2) / hourHeight * 60)),
-                          .reminder(reminder)))
-        }
-        for alarm in alarms.alarms(on: date) {
-            // Like reminders, alarms are points in time drawn at a fixed height.
-            let start = Double(alarm.minuteOfDay)
-            timed.append(("alarm:\(alarm.id)",
-                          MinuteRange(startMinute: start,
-                                      endMinute: start + Double((Timeline.reminderHeight + 2) / hourHeight * 60)),
-                          .alarm(alarm)))
-        }
-        // Short blocks are drawn at a minimum height in points, so lay them out with the same room.
-        let minMinutes = Double((Timeline.minBlockHeight + 2) / hourHeight * 60)
-        return (allDayEvents, allDayReminders, TimelineLayout.layout(timed, minVisualMinutes: minMinutes))
+    private func dayTimeline(_ items: DayItems?) -> DayTimeline {
+        // Reminders and alarms are drawn at a fixed height, and short events at a minimum one, so
+        // they're laid out with the minutes that height covers at this zoom.
+        DayTimeline(day: date, items: items, alarms: alarms.alarms(on: date),
+                    pointMinutes: Double((Timeline.reminderHeight + 2) / hourHeight * 60),
+                    minMinutes: Double((Timeline.minBlockHeight + 2) / hourHeight * 60))
     }
 
     private func activeDraft(_ items: DayItems?) -> Draft? {
@@ -259,7 +219,7 @@ struct DayPage: View {
         .overlay(alignment: .bottom) { Divider() }
     }
 
-    private func timeline(_ timed: [PositionedItem<Entry>], items: DayItems?, width: CGFloat) -> some View {
+    private func timeline(_ timed: [PositionedItem<TimelineEntry>], items: DayItems?, width: CGFloat) -> some View {
         let columnWidth = width - Timeline.gutter - 8
         let active = activeDraft(items)
         let dragging = active?.dragging == true
@@ -326,7 +286,7 @@ struct DayPage: View {
     }
 
     @ViewBuilder
-    private func eventBlock(_ event: CalendarEvent, entry: PositionedItem<Entry>, active: Draft?, items: DayItems?,
+    private func eventBlock(_ event: CalendarEvent, entry: PositionedItem<TimelineEntry>, active: Draft?, items: DayItems?,
                             columnWidth: CGFloat) -> some View {
         let range = active?.key == entry.key ? active!.range : entry.range
         let frame = Timeline.blockFrame(range, hourHeight: hourHeight)
@@ -404,7 +364,7 @@ struct DayPage: View {
             .zIndex(lifted ? 5 : selected ? 1 : 0)
     }
 
-    private func menu(_ timed: [PositionedItem<Entry>], active: Draft?, items: DayItems?)
+    private func menu(_ timed: [PositionedItem<TimelineEntry>], active: Draft?, items: DayItems?)
         -> (top: CGFloat, items: [EditMenu.Item])? {
         if active?.dragging != true,
            let entry = timed.first(where: { if case .event = $0.item { isSelected($0.key, items) } else { false } }),
@@ -512,7 +472,7 @@ struct DayPage: View {
         }
     }
 
-    private func drag(_ event: CalendarEvent, entry: PositionedItem<Entry>, mode: DragMode, phase: GesturePhase,
+    private func drag(_ event: CalendarEvent, entry: PositionedItem<TimelineEntry>, mode: DragMode, phase: GesturePhase,
                       items: DayItems?) {
         switch phase.state {
         case .began:

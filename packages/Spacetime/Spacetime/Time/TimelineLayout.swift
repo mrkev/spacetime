@@ -117,3 +117,50 @@ extension CalendarEvent {
         Editing.canDrag(editable: editable, allDay: allDay, start: start, end: end, dayStart: dayStart)
     }
 }
+
+/// Something with a time on a day's timeline.
+enum TimelineEntry {
+    case event(CalendarEvent)
+    case reminder(CalendarReminder)
+    case alarm(SpacetimeAlarm)
+}
+
+/// A day's items sorted for a timeline: what goes in the all-day area, and the timed items laid out.
+struct DayTimeline {
+    var allDayEvents: [CalendarEvent] = []
+    var allDayReminders: [CalendarReminder] = []
+    var timed: [PositionedItem<TimelineEntry>] = []
+
+    /// Events spanning the whole of `day` go in the all-day area with all-day ones; the rest are cut to
+    /// the part on this day. Reminders and alarms are moments, laid out as if they took `pointMinutes`
+    /// (the room they're drawn in), and short events as if they took `minMinutes`.
+    init(day: Date, items: DayItems?, alarms: [SpacetimeAlarm], pointMinutes: Double, minMinutes: Double) {
+        let dayStart = Dates.startOfDay(day)
+        let dayEnd = Dates.addDays(dayStart, 1)
+        var timed: [(key: String, range: MinuteRange, item: TimelineEntry)] = []
+        for event in items?.events ?? [] {
+            if event.allDay || (event.start <= dayStart && event.end >= dayEnd) {
+                allDayEvents.append(event)
+                continue
+            }
+            let start = event.start < dayStart ? 0 : Double(Dates.minutesIntoDay(event.start))
+            let end = event.end >= dayEnd ? 24 * 60 : Double(Dates.minutesIntoDay(event.end))
+            timed.append((event.key, MinuteRange(startMinute: start, endMinute: end), .event(event)))
+        }
+        for reminder in items?.reminders ?? [] {
+            guard let due = reminder.due, !reminder.allDay else {
+                allDayReminders.append(reminder)
+                continue
+            }
+            let start = Double(Dates.minutesIntoDay(due))
+            timed.append((reminder.key, MinuteRange(startMinute: start, endMinute: start + pointMinutes),
+                          .reminder(reminder)))
+        }
+        for alarm in alarms {
+            let start = Double(alarm.minuteOfDay)
+            timed.append(("alarm:\(alarm.id)", MinuteRange(startMinute: start, endMinute: start + pointMinutes),
+                          .alarm(alarm)))
+        }
+        self.timed = TimelineLayout.layout(timed, minVisualMinutes: minMinutes)
+    }
+}

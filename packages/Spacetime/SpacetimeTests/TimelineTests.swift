@@ -118,3 +118,61 @@ struct EditingTests {
         #expect(moved.end == Dates.date(year: 2026, month: 10, day: 28, hour: 11))
     }
 }
+
+@MainActor
+struct DayTimelineTests {
+    private let day = Dates.date(year: 2026, month: 11, day: 21)
+
+    private func at(_ dayOffset: Int, _ hour: Int, _ minute: Int = 0) -> Date {
+        Dates.date(Dates.addDays(day, dayOffset), atMinute: hour * 60 + minute)
+    }
+
+    private func event(_ key: String, _ start: Date, _ end: Date, allDay: Bool = false) -> CalendarEvent {
+        CalendarEvent(key: key, title: key, start: start, end: end, allDay: allDay, color: "#FF3B30",
+                      calendarTitle: "Home", editable: true, recurring: false, eventId: key, calendarId: "home")
+    }
+
+    private func reminder(_ key: String, due: Date, allDay: Bool = false) -> CalendarReminder {
+        CalendarReminder(key: key, title: key, due: due, allDay: allDay, completed: false, color: "#FF9500",
+                         listTitle: "Reminders")
+    }
+
+    private func split(_ events: [CalendarEvent], _ reminders: [CalendarReminder] = [],
+                       alarms: [SpacetimeAlarm] = []) -> DayTimeline {
+        DayTimeline(day: day, items: DayItems(events: events, reminders: reminders), alarms: alarms,
+                    pointMinutes: 30, minMinutes: 20)
+    }
+
+    private func range(_ timeline: DayTimeline, _ key: String) -> MinuteRange? {
+        timeline.timed.first { $0.key == key }?.range
+    }
+
+    @Test func putsAllDayEventsAndEventsSpanningTheDayInTheAllDayArea() {
+        let timeline = split([event("flagged", day, at(1, 0), allDay: true),
+                              event("trip", at(-1, 9), at(2, 9)),
+                              event("lunch", at(0, 12), at(0, 13))])
+        #expect(timeline.allDayEvents.map(\.key) == ["flagged", "trip"])
+        #expect(timeline.timed.map(\.key) == ["lunch"])
+    }
+
+    @Test func cutsEventsToThePartOnThisDay() {
+        let timeline = split([event("late", at(-1, 22), at(0, 2)), event("party", at(0, 21), at(1, 3))])
+        #expect(range(timeline, "late") == MinuteRange(startMinute: 0, endMinute: 120))
+        #expect(range(timeline, "party") == MinuteRange(startMinute: 21 * 60, endMinute: 24 * 60))
+    }
+
+    @Test func givesRemindersAndAlarmsTheRoomTheyreDrawnIn() {
+        let alarm = SpacetimeAlarm(id: UUID(), hour: 7, minute: 30, weekdays: [], date: day, label: "",
+                                   snooze: true)
+        let timeline = split([], [reminder("call", due: at(0, 9)), reminder("someday", due: day, allDay: true)],
+                             alarms: [alarm])
+        #expect(range(timeline, "call") == MinuteRange(startMinute: 540, endMinute: 570))
+        #expect(range(timeline, "alarm:\(alarm.id)") == MinuteRange(startMinute: 450, endMinute: 480))
+        #expect(timeline.allDayReminders.map(\.key) == ["someday"])
+    }
+
+    @Test func treatsAMissingDayAsEmpty() {
+        let timeline = DayTimeline(day: day, items: nil, alarms: [], pointMinutes: 30, minMinutes: 20)
+        #expect(timeline.allDayEvents.isEmpty && timeline.allDayReminders.isEmpty && timeline.timed.isEmpty)
+    }
+}

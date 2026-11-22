@@ -85,12 +85,6 @@ private struct DayLabel: View {
     }
 }
 
-private enum StripEntry {
-    case event(CalendarEvent)
-    case reminder(CalendarReminder)
-    case alarm(SpacetimeAlarm)
-}
-
 /// One day of the continuous timeline: hour labels, an all-day row, and the day's events laid out in
 /// rows where they overlap.
 private struct DayStrip: View {
@@ -104,16 +98,20 @@ private struct DayStrip: View {
     private static let hourWidth = ContinuousTimeline.hourWidth
     /// Reminders and alarms are points in time, drawn this wide at any time span.
     private static let pointWidth: CGFloat = 140
+    /// Short events are drawn at least this wide.
+    private static let minEventWidth: CGFloat = 24
 
     private func x(_ minute: Double) -> CGFloat { CGFloat(minute) / 60 * Self.hourWidth }
 
     var body: some View {
-        let (allDay, timed) = split(calendar.day(date))
+        let day = DayTimeline(day: date, items: calendar.day(date), alarms: alarms.alarms(on: date),
+                              pointMinutes: Double(Self.pointWidth / Self.hourWidth * 60),
+                              minMinutes: Double(Self.minEventWidth / Self.hourWidth * 60))
         VStack(alignment: .leading, spacing: 0) {
             header
-            allDayRow(allDay)
+            allDayRow(day.allDayEvents, day.allDayReminders)
             GeometryReader { geometry in
-                timedArea(timed, height: geometry.size.height)
+                timedArea(day.timed, height: geometry.size.height)
             }
         }
         .background { hourLines }
@@ -144,7 +142,7 @@ private struct DayStrip: View {
         }
     }
 
-    private func allDayRow(_ events: [CalendarEvent]) -> some View {
+    private func allDayRow(_ events: [CalendarEvent], _ reminders: [CalendarReminder]) -> some View {
         HStack(spacing: 2) {
             ForEach(events) { event in
                 Button { TimeActions.openEvent(event, calendar: calendar) } label: {
@@ -158,12 +156,19 @@ private struct DayStrip: View {
                 }
                 .buttonStyle(.plain)
             }
+            ForEach(reminders) { reminder in
+                Button { onPressReminder(reminder) } label: {
+                    PointLabel(icon: reminder.completed ? "checkmark.circle.fill" : "circle",
+                               title: reminder.title, color: Color(hex: reminder.color))
+                }
+                .buttonStyle(.plain)
+            }
         }
         .padding(.vertical, 2)
         .frame(height: ContinuousTimeline.allDayHeight)
     }
 
-    private func timedArea(_ timed: [PositionedItem<StripEntry>], height: CGFloat) -> some View {
+    private func timedArea(_ timed: [PositionedItem<TimelineEntry>], height: CGFloat) -> some View {
         ZStack(alignment: .topLeading) {
             Color.clear
             ForEach(timed) { entry in
@@ -176,7 +181,7 @@ private struct DayStrip: View {
                         EventBar(event: event)
                     }
                     .buttonStyle(.plain)
-                    .frame(width: max(24, x(entry.range.endMinute) - left - 2), height: max(20, row - 2))
+                    .frame(width: max(Self.minEventWidth, x(entry.range.endMinute) - left - 2), height: max(20, row - 2))
                     .offset(x: left + 1, y: top)
                 case .reminder(let reminder):
                     Button { onPressReminder(reminder) } label: {
@@ -205,36 +210,6 @@ private struct DayStrip: View {
                 }
             }
         }
-    }
-
-    private func split(_ items: DayItems?) -> ([CalendarEvent], [PositionedItem<StripEntry>]) {
-        let dayStart = Dates.startOfDay(date)
-        let dayEnd = Dates.addDays(dayStart, 1)
-        let pointMinutes = Double(Self.pointWidth / Self.hourWidth * 60)
-        var allDay: [CalendarEvent] = []
-        var timed: [(key: String, range: MinuteRange, item: StripEntry)] = []
-        for event in items?.events ?? [] {
-            if event.allDay || (event.start <= dayStart && event.end >= dayEnd) {
-                allDay.append(event)
-                continue
-            }
-            // The part of the event on this day; the rest is on the days beside it.
-            let start = event.start < dayStart ? 0 : Double(Dates.minutesIntoDay(event.start))
-            let end = event.end >= dayEnd ? 24 * 60 : Double(Dates.minutesIntoDay(event.end))
-            timed.append((event.key, MinuteRange(startMinute: start, endMinute: end), .event(event)))
-        }
-        for reminder in items?.reminders ?? [] {
-            guard let due = reminder.due, !reminder.allDay else { continue }
-            let start = Double(Dates.minutesIntoDay(due))
-            timed.append((reminder.key, MinuteRange(startMinute: start, endMinute: start + pointMinutes),
-                          .reminder(reminder)))
-        }
-        for alarm in alarms.alarms(on: date) {
-            let start = Double(alarm.minuteOfDay)
-            timed.append(("alarm:\(alarm.id)", MinuteRange(startMinute: start, endMinute: start + pointMinutes),
-                          .alarm(alarm)))
-        }
-        return (allDay, TimelineLayout.layout(timed))
     }
 }
 
