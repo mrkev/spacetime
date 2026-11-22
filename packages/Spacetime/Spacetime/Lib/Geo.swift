@@ -1,3 +1,4 @@
+import OSLog
 import CoreLocation
 import MapKit
 
@@ -168,7 +169,7 @@ enum PlaceSearch {
         } catch {
             // MapKit reports "nothing matched" as an error.
             if (error as? MKError)?.code != .placemarkNotFound {
-                print("[geo] search failed: \(error)")
+                Log.places.error("Search failed: \(String(describing: error), privacy: .public)")
             }
             return []
         }

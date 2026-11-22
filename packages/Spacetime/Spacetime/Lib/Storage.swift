@@ -1,3 +1,4 @@
+import OSLog
 import Foundation
 import SQLite3
 
@@ -14,7 +15,7 @@ extension KeyValueStorage {
         do {
             return try JSONDecoder().decode(type, from: data)
         } catch {
-            print("[storage] couldn't read \(key): \(error)")
+            Log.storage.error("Couldn’t read \(key, privacy: .public): \(String(describing: error), privacy: .public)")
             return nil
         }
     }
@@ -24,7 +25,7 @@ extension KeyValueStorage {
             let data = try JSONEncoder().encode(value)
             set(String(decoding: data, as: UTF8.self), forKey: key)
         } catch {
-            print("[storage] couldn't save \(key): \(error)")
+            Log.storage.error("Couldn’t save \(key, privacy: .public): \(String(describing: error), privacy: .public)")
         }
     }
 }
@@ -108,7 +109,7 @@ nonisolated enum ExpoStorageImport {
             storage.set(String(cString: v), forKey: key)
             imported += 1
         }
-        print("[storage] imported \(imported) values from the React Native app")
+        Log.storage.info("Imported \(imported) values from the React Native app")
     }
 }
 

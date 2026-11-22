@@ -1,3 +1,4 @@
+import OSLog
 import SwiftUI
 
 /// Location reminders used to be places in our own store, notified by our own geofencing. Moves any
@@ -20,7 +21,7 @@ enum LegacyReminderMigration {
                     calendar: calendar)
                 space.deletePlace(place.id)
             } catch {
-                print("[space] couldn't move reminder “\(place.name)” to Reminders: \(error)")
+                Log.places.error("Couldn’t move reminder “\(place.name)” to Reminders: \(String(describing: error), privacy: .public)")
             }
         }
     }

@@ -1,3 +1,4 @@
+import OSLog
 import SwiftUI
 #if os(iOS)
 import UIKit
@@ -40,7 +41,7 @@ enum Presenter {
     }
 
     static func showError(_ title: String, _ error: Error) {
-        print("[spacetime] \(title): \(error)")
+        Log.errors.error("\(title, privacy: .public): \(String(describing: error), privacy: .public)")
         alert(title: title, message: error.localizedDescription)
     }
 
@@ -110,7 +111,7 @@ enum Presenter {
     }
 
     static func showError(_ title: String, _ error: Error) {
-        print("[spacetime] \(title): \(error)")
+        Log.errors.error("\(title, privacy: .public): \(String(describing: error), privacy: .public)")
         alert(title: title, message: error.localizedDescription)
     }
 
