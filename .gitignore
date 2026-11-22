@@ -39,3 +39,9 @@ yarn-error.*
 # generated native folders
 packages/*/ios/
 packages/*/android/
+
+# Xcode builds of the native app
+packages/Spacetime/build/
+
+# Per-user Xcode state
+xcuserdata/

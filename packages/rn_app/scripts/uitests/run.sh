@@ -3,7 +3,7 @@
 # Only for when the user asks for testing in the Simulator; see "Testing in the Simulator" in
 # AGENTS.md.
 #
-# Usage, from packages/app:
+# Usage, from packages/rn_app:
 #   scripts/uitests/run.sh                    # every test
 #   scripts/uitests/run.sh testSmoke ...      # only these tests (or Class/testName)
 #

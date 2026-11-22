@@ -3,9 +3,9 @@
   "private": true,
   "packageManager": "pnpm@12.15.0",
   "scripts": {
-    "start": "pnpm --filter @spacetime/app start",
-    "ios": "pnpm --filter @spacetime/app ios",
-    "android": "pnpm --filter @spacetime/app android",
+    "start": "pnpm --filter @spacetime/rn_app start",
+    "ios": "pnpm --filter @spacetime/rn_app ios",
+    "android": "pnpm --filter @spacetime/rn_app android",
     "lint": "pnpm -r lint",
     "typecheck": "pnpm -r typecheck",
     "test": "pnpm -r test",

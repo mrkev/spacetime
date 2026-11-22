@@ -174,7 +174,7 @@ importers:
         specifier: ^3.9.10
         version: 3.9.10
 
-  packages/app:
+  packages/rn_app:
     dependencies:
       '@expo/ui':
         specifier: ~58.0.24

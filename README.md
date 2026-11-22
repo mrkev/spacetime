@@ -1,9 +1,11 @@
 # Spacetime
 
-A React Native (Expo SDK 58) app with two tabs:
+An iOS app with two tabs:
 
 - **Space** — a map of your saved places. Places live in collections ("maps"), each with its own pin color. The built-in **Reminders** collection is special: its places are the reminders in Apple Reminders that have a location, and Reminders notifies you when you arrive at or leave them.
 - **Time** — a calendar modeled on Apple Calendar. It shows the events and reminders already on your phone (via EventKit).
+
+There are two versions: a native SwiftUI app for iPhone and Mac in `packages/Spacetime` (open `Spacetime.xcodeproj` in Xcode), which is replacing the original React Native (Expo SDK 58) app in `packages/rn_app`. Building, testing, and installing the native app is described in [AGENTS.md](AGENTS.md#native-app-packagesspacetime). The rest of this README is about the React Native app.
 
 ## Running
 
@@ -23,7 +25,7 @@ Calendar and Reminders access work best on a real device.
 
 ## How it's organized
 
-The repo is a pnpm workspace. The app lives in `packages/app`; other packages can go alongside it in `packages/`. Inside `packages/app`:
+The repo is a pnpm workspace. The app lives in `packages/rn_app`; other packages can go alongside it in `packages/`. Inside `packages/rn_app`:
 
 ```
 src/app/                     Routes (Expo Router)

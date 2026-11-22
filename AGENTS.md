@@ -1,16 +1,65 @@
-This is an Expo/React Native mobile application. Prioritize mobile-first patterns, performance, and cross-platform compatibility.
+Spacetime is an iOS app, in two versions:
+
+- `packages/Spacetime/`: the native SwiftUI app, which is replacing the React Native one. New work goes here.
+- `packages/rn_app/`: the original Expo/React Native app, kept for reference.
+
+## Native app (`packages/Spacetime`)
+
+SwiftUI, for iPhone (iOS 26.2 and up) and Mac (native macOS, 15.8 and up), with no third-party dependencies. The Xcode project uses folder-synchronized groups, so `.swift` files added under `Spacetime/` or `SpacetimeTests/` are built without editing the project. It builds in Swift 5 mode with main-actor default isolation; pure logic that tests or other threads use is marked `nonisolated`.
+
+- `App/`: the entry point, the shared model, and the tab bar.
+- `Lib/`: dates, storage, geo and place search, gestures, `Presenter` (alerts, action sheets, and system view controllers or sheets over whatever is on screen), and `Platform.swift`.
+- `Space/`: places and collections, the map, the place sheet, and its forms.
+- `Time/`: the EventKit store (`CalendarStore`), the year, month, and day views, and reminders.
+
+**iPhone and Mac.** One target builds both. Code that differs goes behind `#if os(iOS)` / `#if os(macOS)`; `Lib/Platform.swift` has the shared pieces (image and color typealiases, `glass(in:)`, `sizedSheet`, `confirmIfAvailable`). The Mac runs macOS 15, so anything new in iOS/macOS 26 needs `if #available(iOS 26, macOS 26, *)` with a fallback; the compiler only catches this in a macOS build, so build for both. What the Mac does differently:
+
+- No EventKitUI, so events open in `Time/EventEditorView.swift`, which links to Calendar for the fields it lacks.
+- The day view uses mouse gestures: click to select an event, double-click to open it or to create one, drag to move or resize, pinch on the trackpad to zoom, and ⌘← / ⌘→ for the previous and next day.
+- The map drops a pin on right-click or long click. MKMapView can't select points of interest on the Mac.
+- Alerts and action sheets are `NSAlert`s.
+
+Data is saved as JSON under Application Support (`storage/`, one file per key), with the same keys and JSON as the React Native app. On first launch, the app imports that app's Expo SQLite storage if it can read it, which only happens when it's installed over the React Native app with the same bundle ID.
+
+From `packages/Spacetime/`:
+
+```bash
+# Build (the closest thing to a typecheck).
+xcodebuild -project Spacetime.xcodeproj -scheme Spacetime -destination 'generic/platform=iOS Simulator' \
+  -derivedDataPath build/DerivedData build
+
+# Build for the Mac.
+xcodebuild -project Spacetime.xcodeproj -scheme Spacetime -destination 'platform=macOS' \
+  -derivedDataPath build/DerivedData build
+
+# Unit tests (Swift Testing). Pick a simulator nobody else is using.
+xcodebuild test -project Spacetime.xcodeproj -scheme Spacetime -derivedDataPath build/DerivedData \
+  -destination 'platform=iOS Simulator,name=iPhone 16e' -only-testing:SpacetimeTests
+
+# Release build for the phone, then install and launch it (see below for the phone).
+xcodebuild -project Spacetime.xcodeproj -scheme Spacetime -configuration Release -destination 'generic/platform=iOS' \
+  -derivedDataPath build/DerivedData -allowProvisioningUpdates -allowProvisioningDeviceRegistration build
+xcrun devicectl device install app --device 765FE281-0AD8-57F9-B998-22816F0CD00A \
+  build/DerivedData/Build/Products/Release-iphoneos/Spacetime.app
+xcrun devicectl device process launch --terminate-existing \
+  --device 765FE281-0AD8-57F9-B998-22816F0CD00A com.aykev.Spacetime
+```
+
+Build and run the tests before declaring a task done. Installing fails with "The device is locked" if the phone is locked; ask the user to unlock it.
+
+The rest of this file is about the React Native app.
 
 ## Expo has changed — do not trust your training data
 
 Expo ships breaking changes every SDK release. APIs you remember are likely renamed, moved, or removed. Before writing any code that touches an Expo, EAS, or React Native API:
 
-1. Read the major version of the `expo` package in `packages/app/package.json`.
+1. Read the major version of the `expo` package in `packages/rn_app/package.json`.
 2. Fetch the matching versioned docs: `https://docs.expo.dev/versions/v<major>.0.0/`
 3. For anything else, fetch https://docs.expo.dev/llms.txt — an index of all Expo docs with corrections to common LLM misconceptions. Follow its links to the specific page you need; never answer from memory.
 
 ## Commands
 
-This is a pnpm workspace (see `pnpm-workspace.yaml`). The Expo app is in `packages/app/`; run app commands from that directory.
+This is a pnpm workspace (see `pnpm-workspace.yaml`). The Expo app is in `packages/rn_app/`; run app commands from that directory.
 
 ```bash
 pnpm expo install <package>  # ALWAYS use instead of pnpm add — resolves SDK-compatible versions
@@ -27,7 +76,7 @@ Run lint and typecheck before declaring any task done.
 
 ## Navigation & Routing
 
-- Use **Expo Router** for all navigation. Routes live in `packages/app/src/app/` — every file there is a screen, `_layout.tsx` files define navigators. Keep non-route code (components, hooks, utils) outside `src/app/`.
+- Use **Expo Router** for all navigation. Routes live in `packages/rn_app/src/app/` — every file there is a screen, `_layout.tsx` files define navigators. Keep non-route code (components, hooks, utils) outside `src/app/`.
 - Import `Link`, `router`, and `useLocalSearchParams` from `expo-router`.
 - Docs: https://docs.expo.dev/router/introduction.md
 
@@ -37,7 +86,7 @@ The app is only built for iOS, locally with Xcode, and installed on the user's i
 
 The user tests on the phone. When it's connected, build and install after making changes; don't run simulator or UI tests unless asked.
 
-From `packages/app/`:
+From `packages/rn_app/`:
 
 ```bash
 # 1. Only if ios/ is missing, or after changing app.json, a dependency with native code, or a
@@ -64,7 +113,7 @@ Launching fails with "Locked" if the phone is locked; the app is still installed
 
 ## Testing in the Simulator (only when asked)
 
-Only do this when the user asks you to test something yourself; otherwise they test on the phone. You can drive the app in the iOS Simulator: `xcrun simctl` runs the simulator (boot, launch, screenshots, fake location, permissions) but can't tap, swipe, or type, so the taps happen in an XCUITest. `scripts/uitests/` in `packages/app/` has everything:
+Only do this when the user asks you to test something yourself; otherwise they test on the phone. You can drive the app in the iOS Simulator: `xcrun simctl` runs the simulator (boot, launch, screenshots, fake location, permissions) but can't tap, swipe, or type, so the taps happen in an XCUITest. `scripts/uitests/` in `packages/rn_app/` has everything:
 
 - `run.sh [testName ...]` does the whole run:
   - generates `ios/` if it's missing and adds the UI test target;
@@ -114,7 +163,7 @@ Look at the screenshots with your file-reading tool, which shows images. Things 
 
 ## Gotchas
 
-- **New routes fail the typecheck until Metro runs.** Typed routes in `.expo/types/router.d.ts` are only regenerated by the dev server, so after adding a route file, start `CI=1 pnpm expo start` in `packages/app/` until that file mentions the new route, then stop it.
+- **New routes fail the typecheck until Metro runs.** Typed routes in `.expo/types/router.d.ts` are only regenerated by the dev server, so after adding a route file, start `CI=1 pnpm expo start` in `packages/rn_app/` until that file mentions the new route, then stop it.
 - **Patching a dependency:** `pnpm patch <pkg>@<version> --edit-dir <dir>`, edit the files in `<dir>`, then `pnpm patch-commit <dir>`. Patches live in `patches/` and are listed under `patchedDependencies` in `pnpm-workspace.yaml`. A patch that changes native code needs a prebuild and rebuild.
 - **expo-calendar reminders:** reminders from `list.listReminders()` are bare native objects that skip expo-calendar's JS wrapper, so `update` takes ISO date strings and a second argument naming the fields to clear. A reminder's `id` (`calendarItemIdentifier`) can change when Reminders resyncs; `externalId` (patched in) is stable across devices but can be missing. Key anything you store about a reminder on both, as `src/time/reminderMeta.ts` does.
 - **Keyboards in modal sheets:** don't use `automaticallyAdjustKeyboardInsets`; inside a sheet with a header it scrolls the form up under the header. Pad the bottom of the scroll content with `useKeyboardHeight()` from `src/lib/keyboard.ts` instead.
