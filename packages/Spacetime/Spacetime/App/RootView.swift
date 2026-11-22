@@ -3,20 +3,12 @@ import SwiftUI
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
+    /// The tab bar's selection. The "now" button selects its tab for a moment; it's then switched back,
+    /// which a binding that refused the change wouldn't do: the tab bar would stay on that empty tab.
+    @State private var selection = AppTab.space
 
     var body: some View {
-        @Bindable var model = model
-        let tab = Binding<AppTab>(
-            get: { model.tab },
-            set: { next in
-                if next == .now {
-                    model.runNowAction()
-                } else {
-                    if next == .time { model.time.openFirstTime() }
-                    model.tab = next
-                }
-            })
-        TabView(selection: tab) {
+        TabView(selection: $selection) {
             Tab("Space", systemImage: "map", value: AppTab.space) {
                 SpaceView()
             }
@@ -33,6 +25,15 @@ struct RootView: View {
                 } else {
                     Label("Here", systemImage: "location.fill")
                 }
+            }
+        }
+        .onChange(of: selection) { previous, next in
+            if next == .now {
+                model.runNowAction()
+                selection = previous
+            } else if previous != .now {
+                if next == .time { model.time.openFirstTime() }
+                model.tab = next
             }
         }
         .onChange(of: scenePhase) { _, phase in
