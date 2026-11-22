@@ -35,6 +35,13 @@ struct DatesTests {
         #expect(Calendar.current.component(.minute, from: next) == 30)
     }
 
+    @Test func startsNewThingsOnTheNextHalfHour() {
+        let now = date(2026, 3, 7, 9, 10)
+        #expect(Dates.nextHalfHour(now: now) == date(2026, 3, 7, 9, 30))
+        #expect(Dates.nextHalfHour(now: date(2026, 3, 7, 9, 30)) == date(2026, 3, 7, 10))
+        #expect(Dates.nextHalfHour(on: date(2026, 3, 9), now: now) == date(2026, 3, 9, 9, 30))
+    }
+
     @Test func findsTheStartOfTheWeek() {
         // Oct 28 2026 is a Wednesday.
         #expect(Dates.dayKey(Dates.startOfWeek(date(2026, 10, 28))) == "2026-10-25")

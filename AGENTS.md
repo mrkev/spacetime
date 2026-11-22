@@ -5,21 +5,25 @@ Spacetime is an iOS app, in two versions:
 
 ## Native app (`packages/Spacetime`)
 
+> **To do on the Mac (pending since 2026-11-22):** the split into `Shared/`, `iOS/`, and `Mac/` below was made away from the Mac and has never been built. Before other work, build for the iPhone and the Mac, run the tests, fix what breaks (most likely missing imports in `Shared/`, now that it doesn't import SwiftUI), install it on the phone to check it, and then delete this note.
+
 SwiftUI, for iPhone (iOS 26.2 and up) and Mac (native macOS, 15.8 and up), with no third-party dependencies. The Xcode project uses folder-synchronized groups, so `.swift` files added under `Spacetime/` or `SpacetimeTests/` are built without editing the project. It builds in Swift 5 mode with main-actor default isolation; pure logic that tests or other threads use is marked `nonisolated`.
 
-- `App/`: the entry point, the shared model, and the tab bar.
-- `Lib/`: dates, storage, geo and place search, gestures, `Presenter` (alerts, action sheets, and system view controllers or sheets over whatever is on screen), and `Platform.swift`.
-- `Space/`: places and collections, the map, the place sheet, and its forms.
-- `Time/`: the EventKit store (`CalendarStore`), the year, month, and day views, and reminders.
+The iPhone and the Mac share the app's logic but each has its own UI, so either can change without the other:
 
-**iPhone and Mac.** One target builds both. Code that differs goes behind `#if os(iOS)` / `#if os(macOS)`; `Lib/Platform.swift` has the shared pieces (image and color typealiases, `glass(in:)`, `sizedSheet`, `confirmIfAvailable`). The Mac runs macOS 15, so anything new in iOS/macOS 26 needs `if #available(iOS 26, macOS 26, *)` with a fallback; the compiler only catches this in a macOS build.
+- `Shared/`: the logic, built for both. Dates, storage, geo and place search, location, hex colors (`Lib/`); places, collections, and location reminders (`Space/`); the EventKit store (`CalendarStore`), creating and changing events (`EventChanges.swift`), reminder metadata, the timeline's layout, and alarms (`Time/`). No views, and no SwiftUI, UIKit, or AppKit: views and colors as `Color` belong to a UI. (`Alarms.swift` imports SwiftUI only for the `Color` AlarmKit asks for.) A difference between the platforms here (like `Geo`'s macOS 15 fallbacks) goes behind `#if os(...)`.
+- `iOS/`: the iPhone app. `App/` (the entry point, the app model, and the tab bar), `Lib/` (gestures, `Presenter` for alerts, action sheets, and system view controllers over whatever is on screen, `Theme`, and small view helpers), `Space/` (the map, the place sheet, and its forms), and `Time/` (the year, month, and day views, reminders, alarms, and `TimeActions`, which presents event changes).
+- `Mac/`: the Mac app, laid out the same way. It began as a copy of the iPhone UI with the Mac's differences, and the two can drift apart from here.
 
-The iPhone comes first: the Mac app may not be kept, so don't spend much effort on it. Keep shared code from breaking it where that's easy, and build for the Mac now and then (say, before a larger refactor lands), but a change doesn't need a Mac build or Mac-specific polish to be done. What the Mac does differently:
+Every file in `iOS/` is wrapped in `#if os(iOS)`, and every file in `Mac/` in `#if os(macOS)`, because one target builds both. Mac files end in `.mac.swift`, since Swift won't build two files with the same name into one target. New UI goes in `iOS/` only, with no `#if os(...)`, and iPhone code can use iOS 26 APIs without availability checks.
 
-- No EventKitUI, so events open in `Time/EventEditorView.swift`, which links to Calendar for the fields it lacks.
+The iPhone comes first: the Mac app may not be kept, so don't spend much effort on it. A change to `iOS/` needs nothing on the Mac. A change to `Shared/` can break the Mac's build, so build for the Mac now and then (say, before a larger refactor lands) and fix what broke, but a change doesn't need a Mac build or Mac-specific polish to be done. What the Mac does differently:
+
+- No EventKitUI, so events open in `Mac/Time/EventEditorView.mac.swift`, which links to Calendar for the fields it lacks.
 - The day view uses mouse gestures: click to select an event, double-click to open it or to create one, drag to move or resize, pinch on the trackpad to zoom, and ⌘← / ⌘→ for the previous and next day.
 - The map drops a pin on right-click or long click. MKMapView can't select points of interest on the Mac.
 - Alerts and action sheets are `NSAlert`s.
+- It runs macOS 15, so anything new in macOS 26 needs `if #available(macOS 26, *)` with a fallback; `Mac/Lib/Platform.mac.swift` has some (`glass(in:)`, `sizedSheet`, `confirmIfAvailable`).
 
 Info.plist entries are `INFOPLIST_KEY_` build settings. Keys Xcode doesn't know (it silently drops them), like `NSAlarmKitUsageDescription` for alarms (AlarmKit, iPhone only), go in `Info.plist` next to the Xcode project, which is merged into the generated one.
 
