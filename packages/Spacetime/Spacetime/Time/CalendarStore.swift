@@ -81,6 +81,22 @@ struct DayItems: Equatable {
     static let empty = DayItems()
 }
 
+/// Keys in the order they were last used, keeping only the latest `limit`.
+nonisolated struct RecentKeys {
+    let limit: Int
+    private(set) var keys: [String] = []
+
+    /// Marks `key` as just used, and returns the keys dropped to stay within the limit.
+    mutating func use(_ key: String) -> [String] {
+        keys.removeAll { $0 == key }
+        keys.append(key)
+        guard keys.count > limit else { return [] }
+        let dropped = Array(keys.prefix(keys.count - limit))
+        keys.removeFirst(dropped.count)
+        return dropped
+    }
+}
+
 /// How far ahead events show at their places on the map.
 let upcomingDays = 30
 
@@ -104,8 +120,9 @@ final class CalendarStore {
     /// Reminders with a due date, by day key.
     private var datedReminders: [String: [CalendarReminder]] = [:]
 
-    /// Months we've been asked for, so a refresh can reload exactly what's on screen.
-    @ObservationIgnored private var requested = Set<String>()
+    /// The months asked for lately, which stay loaded. A refresh, after every change, reloads them, so
+    /// only the most recent are kept: those around the screens you've just been looking at.
+    @ObservationIgnored private var requested = RecentKeys(limit: 24)
     @ObservationIgnored private var reminderGeneration = 0
     @ObservationIgnored private var pendingRefresh: Task<Void, Never>?
 
@@ -172,7 +189,7 @@ final class CalendarStore {
     func refresh() {
         var next: [String: [String: [CalendarEvent]]] = [:]
         if status == .granted {
-            for key in requested {
+            for key in requested.keys {
                 if let month = Dates.parseMonthKey(key) { next[key] = fetchMonth(month) }
             }
         }
@@ -187,7 +204,7 @@ final class CalendarStore {
         for offset in -radius...radius {
             let month = Dates.addMonths(date, offset)
             let key = Dates.monthKey(month)
-            requested.insert(key)
+            for dropped in requested.use(key) { monthEvents[dropped] = nil }
             if monthEvents[key] == nil { monthEvents[key] = fetchMonth(month) }
         }
     }
