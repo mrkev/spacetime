@@ -75,16 +75,40 @@ struct PanRecognizer: UIGestureRecognizerRepresentable {
     var isEnabled = true
     var action: (GesturePhase) -> Void
 
-    func makeUIGestureRecognizer(context: Context) -> UIPanGestureRecognizer {
-        UIPanGestureRecognizer()
+    func makeUIGestureRecognizer(context: Context) -> TouchDownPanRecognizer {
+        TouchDownPanRecognizer()
     }
 
-    func updateUIGestureRecognizer(_ recognizer: UIPanGestureRecognizer, context: Context) {
+    func updateUIGestureRecognizer(_ recognizer: TouchDownPanRecognizer, context: Context) {
         recognizer.isEnabled = isEnabled
     }
 
-    func handleUIGestureRecognizerAction(_ recognizer: UIPanGestureRecognizer, context: Context) {
-        if let phase = GesturePhase(recognizer, localLocation: context.converter.localLocation) { action(phase) }
+    func handleUIGestureRecognizerAction(_ recognizer: TouchDownPanRecognizer, context: Context) {
+        guard var phase = GesturePhase(recognizer, localLocation: context.converter.localLocation) else { return }
+        if phase.state == .began, let touchDown = recognizer.touchDown {
+            // A pan begins once the finger has moved a little. Begin it where the finger came down, or
+            // what's dragged lags that far behind the finger.
+            phase.localLocation.x += touchDown.x - phase.location.x
+            phase.localLocation.y += touchDown.y - phase.location.y
+            phase.location = touchDown
+        }
+        action(phase)
+    }
+}
+
+/// A pan that remembers where the finger came down, in the window. (Its translation leaves out some
+/// of the way the finger moved before it began.)
+final class TouchDownPanRecognizer: UIPanGestureRecognizer {
+    private(set) var touchDown: CGPoint?
+
+    override func touchesBegan(_ touches: Set<UITouch>, with event: UIEvent) {
+        super.touchesBegan(touches, with: event)
+        if touchDown == nil { touchDown = touches.first?.location(in: nil) }
+    }
+
+    override func reset() {
+        super.reset()
+        touchDown = nil
     }
 }
 
