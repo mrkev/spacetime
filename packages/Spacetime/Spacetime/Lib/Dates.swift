@@ -104,6 +104,11 @@ nonisolated enum Dates {
         date.formatted(.dateTime.hour())
     }
 
+    /// An hour of any day, like "3 PM", or "15" where the clock is 24-hour. 24 is midnight.
+    static func formatHour(hour: Int) -> String {
+        formatHour(date(year: 2000, month: 1, day: 1, hour: hour % 24))
+    }
+
     static func formatMonth(_ date: Date) -> String {
         date.formatted(.dateTime.month(.wide))
     }

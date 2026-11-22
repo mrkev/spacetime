@@ -195,7 +195,7 @@ struct MiniTimeline: View {
             ZStack(alignment: .topLeading) {
                 ForEach(0...hours, id: \.self) { i in
                     HStack(spacing: 0) {
-                        Text(Dates.formatHour(Dates.date(year: 2026, month: 1, day: 1, hour: (firstHour + i) % 24)))
+                        Text(Dates.formatHour(hour: firstHour + i))
                             .font(.system(size: 12))
                             .foregroundStyle(Theme.secondaryText)
                             .frame(width: gutter - 8, alignment: .trailing)

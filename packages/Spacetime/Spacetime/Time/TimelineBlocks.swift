@@ -9,7 +9,7 @@ struct HourGrid: View {
         ZStack(alignment: .topLeading) {
             ForEach(0...24, id: \.self) { hour in
                 HStack(spacing: 0) {
-                    Text(hour == 0 || hour == 24 ? "12 AM" : Dates.formatHour(Dates.date(year: 2026, month: 1, day: 1, hour: hour)))
+                    Text(Dates.formatHour(hour: hour))
                         .font(.system(size: 11))
                         .foregroundStyle(Theme.secondaryText)
                         .frame(width: Timeline.gutter - 8, alignment: .trailing)

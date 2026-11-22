@@ -73,6 +73,13 @@ struct DatesTests {
         #expect(Dates.formatRelativeDay(date(2026, 10, 27, 8), now: now) == "Tomorrow")
         #expect(Dates.formatRelativeDay(date(2026, 10, 25, 8), now: now) == "Yesterday")
     }
+
+    @Test func formatsMidnightLikeTheOtherHours() {
+        let midnight = Dates.formatHour(Dates.date(year: 2026, month: 11, day: 22, hour: 0))
+        #expect(Dates.formatHour(hour: 0) == midnight)
+        #expect(Dates.formatHour(hour: 24) == midnight)
+        #expect(Dates.formatHour(hour: 13) == Dates.formatHour(Dates.date(year: 2026, month: 11, day: 22, hour: 13)))
+    }
 }
 
 @MainActor
