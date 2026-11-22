@@ -9,23 +9,64 @@ private func weeksInMonth(_ month: Date) -> Int {
     Int(ceil(Double(Dates.weekday(month) + Dates.daysInMonth(month)) / 7))
 }
 
+/// Where each month is in the list. Months are four to six weeks tall, so they're placed by hand: a
+/// lazy stack guesses the heights of months it hasn't drawn, so starting one on this month, 120 months
+/// in, landed several months off.
+private struct MonthColumn {
+    /// Where each month starts, from `-monthsEachWay`, and then where the last one ends.
+    let tops: [CGFloat]
+
+    init(thisMonth: Date) {
+        var tops: [CGFloat] = [0]
+        for offset in -monthsEachWay...monthsEachWay {
+            let month = Dates.addMonths(thisMonth, offset)
+            tops.append(tops.last! + titleHeight + CGFloat(weeksInMonth(month)) * weekHeight)
+        }
+        self.tops = tops
+    }
+
+    var height: CGFloat { tops.last! }
+    func top(_ offset: Int) -> CGFloat { tops[offset + monthsEachWay] }
+    func height(_ offset: Int) -> CGFloat { tops[offset + monthsEachWay + 1] - tops[offset + monthsEachWay] }
+
+    /// The month at `y`.
+    func offset(at y: CGFloat) -> Int {
+        let index = (tops.lastIndex { $0 <= y } ?? 0) - monthsEachWay
+        return min(monthsEachWay, max(-monthsEachWay, index))
+    }
+}
+
+/// The months on screen, and the one at the top, which names the year.
+private struct VisibleMonths: Equatable {
+    var top: Int
+    var drawn: ClosedRange<Int>
+}
+
 /// A scrolling list of months, like Calendar's month view.
 struct MonthView: View {
     let route: TimeRoute
-    let initialMonth: Date
 
     @Environment(AppModel.self) private var model
     @Environment(CalendarStore.self) private var calendar
-    @State private var position: Int?
+    @State private var position: ScrollPosition
+    @State private var visible: VisibleMonths
     @State private var newReminder: NewReminderRequest?
-    private let thisMonth = Dates.startOfMonth(Date())
+    private let thisMonth: Date
+    private let column: MonthColumn
 
     init(route: TimeRoute, initialMonth: Date) {
         self.route = route
-        self.initialMonth = initialMonth
-        let offset = Dates.differenceInMonths(Dates.startOfMonth(Date()), initialMonth)
-        _position = State(initialValue: max(-monthsEachWay, min(monthsEachWay, offset)))
+        let thisMonth = Dates.startOfMonth(Date())
+        self.thisMonth = thisMonth
+        let column = MonthColumn(thisMonth: thisMonth)
+        self.column = column
+        let offset = max(-monthsEachWay, min(monthsEachWay, Dates.differenceInMonths(thisMonth, initialMonth)))
+        _position = State(initialValue: ScrollPosition(y: column.top(offset)))
+        _visible = State(initialValue: VisibleMonths(
+            top: offset, drawn: max(-monthsEachWay, offset - 1)...min(monthsEachWay, offset + 3)))
     }
+
+    private func month(_ offset: Int) -> Date { Dates.addMonths(thisMonth, offset) }
 
     var body: some View {
         let nav = model.time
@@ -33,23 +74,27 @@ struct MonthView: View {
             WeekdayHeader()
             AccessBanner()
             ScrollView {
-                LazyVStack(spacing: 0) {
-                    ForEach(-monthsEachWay...monthsEachWay, id: \.self) { offset in
-                        let month = Dates.addMonths(thisMonth, offset)
-                        MonthItem(month: month) { day in nav.path.append(.day(day)) }
-                            .frame(height: titleHeight + CGFloat(weeksInMonth(month)) * weekHeight)
+                ZStack(alignment: .top) {
+                    Color.clear.frame(height: column.height)
+                    ForEach(Array(visible.drawn), id: \.self) { offset in
+                        MonthItem(month: month(offset)) { day in nav.path.append(.day(day)) }
+                            .frame(height: column.height(offset))
+                            .alignmentGuide(.top) { _ in -column.top(offset) }
                     }
                 }
-                .scrollTargetLayout()
                 .noScrollToTop()
             }
-            .scrollPosition(id: $position, anchor: .top)
+            .scrollPosition($position)
             .scrollIndicators(.hidden)
-            .onScrollTargetVisibilityChange(idType: Int.self, threshold: 0.3) { visible in
-                guard let first = visible.first else { return }
-                let month = Dates.addMonths(thisMonth, first)
-                nav.monthViewYear = Calendar.current.component(.year, from: month)
-                calendar.ensureMonths(month, radius: 2)
+            .onScrollGeometryChange(for: VisibleMonths.self, of: { geometry in
+                let y = geometry.contentOffset.y + geometry.contentInsets.top
+                let height = geometry.containerSize.height
+                // A month counts as showing once it's well onto the screen.
+                return VisibleMonths(top: column.offset(at: y + height * 0.2),
+                                     drawn: max(-monthsEachWay, column.offset(at: y) - 1)...min(
+                                        monthsEachWay, column.offset(at: y + height) + 1))
+            }) { _, next in
+                visible = next
             }
         }
         .background(Theme.background)
@@ -64,16 +109,22 @@ struct MonthView: View {
             NavigationStack { ReminderEditorView(date: request.date) }
         }
         .onAppear {
-            calendar.ensureMonths(Dates.addMonths(thisMonth, position ?? 0), radius: 2)
-            nav.monthViewYear = Calendar.current.component(.year, from: Dates.addMonths(thisMonth, position ?? 0))
+            showing(visible.top)
             if nav.isTop(route) { TimeNavigation.remember(.month) }
         }
+        .onChange(of: visible.top) { _, top in showing(top) }
         .onChange(of: nav.isTop(route)) { _, top in if top { TimeNavigation.remember(.month) } }
-        .onChange(of: calendar.status) { calendar.ensureMonths(Dates.addMonths(thisMonth, position ?? 0), radius: 2) }
+        .onChange(of: calendar.status) { calendar.ensureMonths(month(visible.top), radius: 2) }
         .onChange(of: model.todayRequests) {
             guard nav.isTop(route) else { return }
-            withAnimation { position = 0 }
+            withAnimation { position.scrollTo(y: column.top(0)) }
         }
+    }
+
+    /// Loads the months around the one at the top, and shows its year on the year view's back button.
+    private func showing(_ offset: Int) {
+        model.time.monthViewYear = Calendar.current.component(.year, from: month(offset))
+        calendar.ensureMonths(month(offset), radius: 2)
     }
 }
 
