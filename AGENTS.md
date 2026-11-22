@@ -12,7 +12,9 @@ SwiftUI, for iPhone (iOS 26.2 and up) and Mac (native macOS, 15.8 and up), with 
 - `Space/`: places and collections, the map, the place sheet, and its forms.
 - `Time/`: the EventKit store (`CalendarStore`), the year, month, and day views, and reminders.
 
-**iPhone and Mac.** One target builds both. Code that differs goes behind `#if os(iOS)` / `#if os(macOS)`; `Lib/Platform.swift` has the shared pieces (image and color typealiases, `glass(in:)`, `sizedSheet`, `confirmIfAvailable`). The Mac runs macOS 15, so anything new in iOS/macOS 26 needs `if #available(iOS 26, macOS 26, *)` with a fallback; the compiler only catches this in a macOS build, so build for both. What the Mac does differently:
+**iPhone and Mac.** One target builds both. Code that differs goes behind `#if os(iOS)` / `#if os(macOS)`; `Lib/Platform.swift` has the shared pieces (image and color typealiases, `glass(in:)`, `sizedSheet`, `confirmIfAvailable`). The Mac runs macOS 15, so anything new in iOS/macOS 26 needs `if #available(iOS 26, macOS 26, *)` with a fallback; the compiler only catches this in a macOS build.
+
+The iPhone comes first: the Mac app may not be kept, so don't spend much effort on it. Keep shared code from breaking it where that's easy, and build for the Mac now and then (say, before a larger refactor lands), but a change doesn't need a Mac build or Mac-specific polish to be done. What the Mac does differently:
 
 - No EventKitUI, so events open in `Time/EventEditorView.swift`, which links to Calendar for the fields it lacks.
 - The day view uses mouse gestures: click to select an event, double-click to open it or to create one, drag to move or resize, pinch on the trackpad to zoom, and ⌘← / ⌘→ for the previous and next day.
@@ -30,7 +32,7 @@ From `packages/Spacetime/`:
 xcodebuild -project Spacetime.xcodeproj -scheme Spacetime -destination 'generic/platform=iOS Simulator' \
   -derivedDataPath build/DerivedData build
 
-# Build for the Mac.
+# Build for the Mac (occasionally; see above).
 xcodebuild -project Spacetime.xcodeproj -scheme Spacetime -destination 'platform=macOS' \
   -derivedDataPath build/DerivedData build
 
