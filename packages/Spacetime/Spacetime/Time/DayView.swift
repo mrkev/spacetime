@@ -43,6 +43,13 @@ struct DayView: View {
     @State private var newReminder: NewReminderRequest?
     @State private var openReminder: CalendarReminder?
     @State private var eventPlace: EventPlaceRequest?
+    #if os(iOS)
+    @Environment(\.verticalSizeClass) private var verticalSizeClass
+    /// A phone on its side, which shows the days as one continuous timeline.
+    private var sideways: Bool { verticalSizeClass == .compact }
+    #else
+    private let sideways = false
+    #endif
 
     init(route: TimeRoute, initialDay: Date) {
         self.route = route
@@ -74,36 +81,16 @@ struct DayView: View {
 
     var body: some View {
         let nav = model.time
-        VStack(spacing: 0) {
-            weekHeader
-            AccessBanner()
-            ScrollView(.horizontal) {
-                LazyHStack(spacing: 0) {
-                    ForEach(0...(daysEachWay * 2), id: \.self) { index in
-                        let date = dayFor(index)
-                        let key = Dates.dayKey(date)
-                        DayPage(
-                            date: date,
-                            isCurrent: index == dayIndex,
-                            scroll: scroll,
-                            hourHeight: $hourHeight,
-                            scrollToNow: scrollToNow,
-                            selectedKey: selection?.day == key ? selection?.key : nil,
-                            onSelect: { selection = $0.map { TimelineSelection(key: $0, day: key) } },
-                            onGestureActive: { gestureActive = $0 },
-                            onZoomEnd: { FileStorage.shared.set(String(Double(hourHeight)), forKey: zoomKey) },
-                            onPressReminder: { openReminder = $0 },
-                            onSetPlace: { event, span in eventPlace = EventPlaceRequest(event: event, span: span) })
-                            .containerRelativeFrame(.horizontal)
-                    }
-                }
-                .scrollTargetLayout()
+        Group {
+            if sideways {
+                // Over where the hidden bars were; the sides stay clear of the camera.
+                continuousTimeline.ignoresSafeArea(edges: .vertical)
+            } else {
+                pager
             }
-            .scrollTargetBehavior(.paging)
-            .scrollPosition(id: $dayIndex)
-            .scrollIndicators(.hidden)
-            .scrollDisabled(gestureActive)
         }
+        .barsHidden(sideways)
+        .allowsLandscape(nav.isTop(route) && model.tab == .time)
         .background(Theme.background)
         .navigationTitle("")
         .inlineNavigationTitle()
@@ -154,6 +141,50 @@ struct DayView: View {
             scroll.y = Timeline.nowOffset(hourHeight: hourHeight)
             select(Date())
             scrollToNow += 1
+        }
+    }
+
+    /// The week strip over a page per day.
+    private var pager: some View {
+        VStack(spacing: 0) {
+            weekHeader
+            AccessBanner()
+            ScrollView(.horizontal) {
+                LazyHStack(spacing: 0) {
+                    ForEach(0...(daysEachWay * 2), id: \.self) { index in
+                        let date = dayFor(index)
+                        let key = Dates.dayKey(date)
+                        DayPage(
+                            date: date,
+                            isCurrent: index == dayIndex,
+                            scroll: scroll,
+                            hourHeight: $hourHeight,
+                            scrollToNow: scrollToNow,
+                            selectedKey: selection?.day == key ? selection?.key : nil,
+                            onSelect: { selection = $0.map { TimelineSelection(key: $0, day: key) } },
+                            onGestureActive: { gestureActive = $0 },
+                            onZoomEnd: { FileStorage.shared.set(String(Double(hourHeight)), forKey: zoomKey) },
+                            onPressReminder: { openReminder = $0 },
+                            onSetPlace: { event, span in eventPlace = EventPlaceRequest(event: event, span: span) })
+                            .containerRelativeFrame(.horizontal)
+                    }
+                }
+                .scrollTargetLayout()
+            }
+            .scrollTargetBehavior(.paging)
+            .scrollPosition(id: $dayIndex)
+            .scrollIndicators(.hidden)
+            .scrollDisabled(gestureActive)
+        }
+    }
+
+    /// The days as one timeline, starting where the day page was scrolled to and keeping the day
+    /// page in step, so turning back shows the same day and time.
+    private var continuousTimeline: some View {
+        let topMinute = max(0, Double((scroll.y - Timeline.padding) / hourHeight * 60))
+        return ContinuousTimeline(day: selected, minute: topMinute, onPressReminder: { openReminder = $0 }) { day, minute in
+            if !Dates.isSameDay(day, selected) { select(day) }
+            scroll.y = Timeline.padding + CGFloat(minute) / 60 * hourHeight
         }
     }
 

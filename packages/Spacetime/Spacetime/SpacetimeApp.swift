@@ -14,6 +14,9 @@ extension View {
 @main
 struct SpacetimeApp: App {
     @State private var model = AppModel()
+    #if os(iOS)
+    @UIApplicationDelegateAdaptor private var appDelegate: AppDelegate
+    #endif
 
     var body: some Scene {
         WindowGroup {
