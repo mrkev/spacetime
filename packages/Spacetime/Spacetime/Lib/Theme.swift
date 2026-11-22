@@ -31,6 +31,9 @@ enum Theme {
     static let hourLine = Color(nsColor: .separatorColor)
     #endif
 
+    /// Alarms are orange, like Clock's.
+    static let alarm = Color.orange
+
     static let tintHex = "#FF3B30"
     static let blueHex = "#007AFF"
 }

@@ -34,6 +34,7 @@ enum Timeline {
 private enum Entry {
     case event(CalendarEvent)
     case reminder(CalendarReminder)
+    case alarm(SpacetimeAlarm)
 }
 
 /// Where a dragged event is drawn until the calendar reloads with its saved times. `basis` is the
@@ -73,7 +74,9 @@ struct DayPage: View {
     let onPressReminder: (CalendarReminder) -> Void
     let onSetPlace: (CalendarEvent, Span) -> Void
 
+    @Environment(AppModel.self) private var model
     @Environment(CalendarStore.self) private var calendar
+    @Environment(AlarmStore.self) private var alarms
     @State private var position: ScrollPosition
     @State private var scrollY: CGFloat = 0
     @State private var draft: Draft?
@@ -193,6 +196,14 @@ struct DayPage: View {
                                       endMinute: start + Double((Timeline.reminderHeight + 2) / hourHeight * 60)),
                           .reminder(reminder)))
         }
+        for alarm in alarms.alarms(on: date) {
+            // Like reminders, alarms are points in time drawn at a fixed height.
+            let start = Double(alarm.minuteOfDay)
+            timed.append(("alarm:\(alarm.id)",
+                          MinuteRange(startMinute: start,
+                                      endMinute: start + Double((Timeline.reminderHeight + 2) / hourHeight * 60)),
+                          .alarm(alarm)))
+        }
         // Short blocks are drawn at a minimum height in points, so lay them out with the same room.
         let minMinutes = Double((Timeline.minBlockHeight + 2) / hourHeight * 60)
         return (allDayEvents, allDayReminders, TimelineLayout.layout(timed, minVisualMinutes: minMinutes))
@@ -282,6 +293,12 @@ struct DayPage: View {
                 case .reminder(let reminder):
                     let w = columnWidth / CGFloat(entry.columns)
                     ReminderBlock(reminder: reminder, onPress: onPressReminder)
+                        .frame(width: w - 2, height: Timeline.reminderHeight)
+                        .offset(x: Timeline.gutter + CGFloat(entry.column) * w,
+                                y: Timeline.y(minute: entry.range.startMinute, hourHeight: hourHeight))
+                case .alarm(let alarm):
+                    let w = columnWidth / CGFloat(entry.columns)
+                    AlarmBlock(alarm: alarm) { model.time.alarmEditor = AlarmEditRequest(alarm: alarm) }
                         .frame(width: w - 2, height: Timeline.reminderHeight)
                         .offset(x: Timeline.gutter + CGFloat(entry.column) * w,
                                 y: Timeline.y(minute: entry.range.startMinute, hourHeight: hourHeight))
@@ -723,6 +740,33 @@ private struct ReminderBlock: View {
         .contentShape(.rect)
         .onTapGesture { onPress(reminder) }
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// An alarm at its time on the timeline; tap it to change or delete it.
+private struct AlarmBlock: View {
+    let alarm: SpacetimeAlarm
+    let onPress: () -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: alarm.repeats ? "alarm.waves.left.and.right.fill" : "alarm.fill")
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.alarm)
+            Text(alarm.title)
+                .font(.system(size: 12, weight: .semibold))
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 5)
+        .frame(maxHeight: .infinity)
+        .background(Theme.background, in: .rect(cornerRadius: 4))
+        .overlay { RoundedRectangle(cornerRadius: 4).stroke(Theme.alarm, lineWidth: 1) }
+        .contentShape(.rect)
+        .onTapGesture(perform: onPress)
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel("Alarm, \(alarm.title), \(Dates.formatTime(Dates.date(Date(), atMinute: alarm.minuteOfDay)))")
+        .accessibilityAddTraits(.isButton)
     }
 }
 

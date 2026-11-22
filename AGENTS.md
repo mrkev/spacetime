@@ -19,6 +19,8 @@ SwiftUI, for iPhone (iOS 26.2 and up) and Mac (native macOS, 15.8 and up), with 
 - The map drops a pin on right-click or long click. MKMapView can't select points of interest on the Mac.
 - Alerts and action sheets are `NSAlert`s.
 
+Info.plist entries are `INFOPLIST_KEY_` build settings. Keys Xcode doesn't know (it silently drops them), like `NSAlarmKitUsageDescription` for alarms (AlarmKit, iPhone only), go in `Info.plist` next to the Xcode project, which is merged into the generated one.
+
 Data is saved as JSON under Application Support (`storage/`, one file per key), with the same keys and JSON as the React Native app. On first launch, the app imports that app's Expo SQLite storage if it can read it, which only happens when it's installed over the React Native app with the same bundle ID.
 
 From `packages/Spacetime/`:

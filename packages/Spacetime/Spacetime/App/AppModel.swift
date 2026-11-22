@@ -13,6 +13,7 @@ final class AppModel {
     let space: SpaceStore
     let calendar: CalendarStore
     let location = LocationModel()
+    let alarms = AlarmStore.shared
     let time = TimeNavigation()
 
     var tab: AppTab = .space

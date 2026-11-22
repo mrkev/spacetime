@@ -401,6 +401,7 @@
 				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Spacetime;
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Spacetime shows your calendar events in the Time tab.";
 				INFOPLIST_KEY_NSLocationUsageDescription = "Spacetime shows where you are on the map.";
@@ -454,6 +455,7 @@
 				ENABLE_RESOURCE_ACCESS_LOCATION = YES;
 				ENABLE_USER_SELECTED_FILES = readonly;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Spacetime;
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Spacetime shows your calendar events in the Time tab.";
 				INFOPLIST_KEY_NSLocationUsageDescription = "Spacetime shows where you are on the map.";

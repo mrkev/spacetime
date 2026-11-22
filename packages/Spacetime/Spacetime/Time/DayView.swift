@@ -118,7 +118,9 @@ struct DayView: View {
             }
             #endif
             ToolbarItem(placement: .primaryAction) {
-                AddMenu(day: selected) { newReminder = NewReminderRequest(date: $0) }
+                AddMenu(day: selected) { newReminder = NewReminderRequest(date: $0) } onNewAlarm: {
+                    model.time.alarmEditor = AlarmEditRequest(day: $0)
+                }
             }
         }
         .sizedSheet(item: $newReminder) { request in

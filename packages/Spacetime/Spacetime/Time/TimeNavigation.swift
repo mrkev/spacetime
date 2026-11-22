@@ -4,6 +4,7 @@ enum TimeRoute: Hashable {
     case month(Date)
     case day(Date)
     case reminders
+    case alarms
 }
 
 /// Which level of the calendar the Time tab was last left on.
@@ -22,6 +23,8 @@ final class TimeNavigation {
     var monthViewYear = Calendar.current.component(.year, from: Date())
     /// The day the day view is showing, whose month its back button shows.
     var dayViewDate = Date()
+    /// The alarm editor showing, if any; it's shown over the whole Time tab.
+    var alarmEditor: AlarmEditRequest?
 
     @ObservationIgnored private var opened = false
 
@@ -48,6 +51,12 @@ final class TimeNavigation {
     }
 }
 
+/// The Time tab's navigation stack.
+///
+/// Each screen pushed onto it gets the app's environment again. When a screen with a toolbar is pushed
+/// after going back, UIKit asks the toolbar's buttons for their accessibility labels (as VoiceOver and
+/// UI tests do), and SwiftUI updates the screen to answer without the environment it inherits, so
+/// reading an `@Environment` object crashes. Seen on iOS 26.3.
 struct TimeTab: View {
     @Environment(AppModel.self) private var model
 
@@ -56,17 +65,25 @@ struct TimeTab: View {
         NavigationStack(path: $nav.path) {
             YearView()
                 .navigationDestination(for: TimeRoute.self) { route in
-                    switch route {
-                    case .month(let month): MonthView(route: route, initialMonth: month)
-                    case .day(let day): DayView(route: route, initialDay: day)
-                    case .reminders: RemindersView()
+                    Group {
+                        switch route {
+                        case .month(let month): MonthView(route: route, initialMonth: month)
+                        case .day(let day): DayView(route: route, initialDay: day)
+                        case .reminders: RemindersView()
+                        case .alarms: AlarmsView()
+                        }
                     }
+                    .appEnvironment(model)
                 }
+        }
+        .sizedSheet(item: $nav.alarmEditor) { request in
+            NavigationStack { AlarmEditorView(alarm: request.alarm, day: request.day) }
         }
     }
 }
 
-/// The toolbar buttons the calendar's levels share: Reminders and the "+" menu.
+/// The toolbar buttons the calendar's levels share: Reminders, Alarms (where there are any), and the
+/// "+" menu.
 struct TimeToolbar: ToolbarContent {
     var showsReminders = true
     var day: Date?
@@ -79,16 +96,24 @@ struct TimeToolbar: ToolbarContent {
                 Button("Reminders", systemImage: "checklist") {
                     model.time.path.append(.reminders)
                 }
+                if AlarmStore.isSupported {
+                    Button("Alarms", systemImage: "alarm") {
+                        model.time.path.append(.alarms)
+                    }
+                }
             }
-            AddMenu(day: day, onNewReminder: onNewReminder)
+            AddMenu(day: day, onNewReminder: onNewReminder) {
+                model.time.alarmEditor = AlarmEditRequest(day: $0)
+            }
         }
     }
 }
 
-/// The "+" menu: a new event or reminder, on `day` if given.
+/// The "+" menu: a new event, reminder, or alarm, on `day` if given.
 struct AddMenu: View {
     var day: Date?
     var onNewReminder: (Date?) -> Void
+    var onNewAlarm: (Date?) -> Void
     @Environment(CalendarStore.self) private var calendar
 
     var body: some View {
@@ -100,6 +125,9 @@ struct AddMenu: View {
                 }
             }
             Button("New Reminder", systemImage: "checklist") { onNewReminder(day) }
+            if AlarmStore.isSupported {
+                Button("New Alarm", systemImage: "alarm") { onNewAlarm(day) }
+            }
         }
     }
 }

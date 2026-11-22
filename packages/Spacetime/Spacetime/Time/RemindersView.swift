@@ -2,6 +2,7 @@ import SwiftUI
 
 /// Open reminders: at a place, scheduled, and with no date.
 struct RemindersView: View {
+    @Environment(AppModel.self) private var model
     @Environment(CalendarStore.self) private var calendar
     @Environment(SpaceStore.self) private var space
     @State private var newReminder: NewReminderRequest?
@@ -63,7 +64,9 @@ struct RemindersView: View {
         #endif
         .toolbar {
             ToolbarItem(placement: .primaryAction) {
-                AddMenu { newReminder = NewReminderRequest(date: $0) }
+                AddMenu { newReminder = NewReminderRequest(date: $0) } onNewAlarm: {
+                    model.time.alarmEditor = AlarmEditRequest(day: $0)
+                }
             }
         }
         .sizedSheet(item: $newReminder) { request in

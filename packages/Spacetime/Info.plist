@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Keys Xcode's generated Info.plist doesn't support yet; the rest are INFOPLIST_KEY_ build settings. -->
+	<key>NSAlarmKitUsageDescription</key>
+	<string>Spacetime rings the alarms you set.</string>
+</dict>
+</plist>
