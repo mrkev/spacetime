@@ -13,7 +13,7 @@ struct RootView: View {
             selection = next
         })) {
             Tab("Space", systemImage: "map", value: AppTab.space) {
-                SpaceView()
+                SpaceView(region: model.space.savedMapRegion())
             }
             Tab("Time", systemImage: "calendar", value: AppTab.time) {
                 TimeTab()

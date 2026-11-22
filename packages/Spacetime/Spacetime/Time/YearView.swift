@@ -46,8 +46,8 @@ struct YearView: View {
             .sizedSheet(item: $newReminder) { request in
                 NavigationStack { ReminderEditorView(date: request.date) }
             }
-            .onAppear { if nav.path.isEmpty { TimeNavigation.remember(.year) } }
-            .onChange(of: nav.path.isEmpty) { _, top in if top { TimeNavigation.remember(.year) } }
+            .onAppear { if nav.path.isEmpty { nav.remember(.year) } }
+            .onChange(of: nav.path.isEmpty) { _, top in if top { nav.remember(.year) } }
             .onChange(of: model.todayRequests) {
                 guard nav.isTop(nil) else { return }
                 // Through the proxy, which scrolls even when `position` is already 0: the tab bar scrolls

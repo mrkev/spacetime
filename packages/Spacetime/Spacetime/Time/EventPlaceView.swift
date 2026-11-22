@@ -12,7 +12,8 @@ struct EventPlaceView: View {
     @State private var completer = PlaceCompleter()
     @State private var searching = false
     @State private var saving = false
-    private let near = MapRegionStore.load()
+    /// Searches prefer places around where the map was left.
+    private var near: SearchRegion? { space.savedMapRegion() }
 
     var body: some View {
         let saved = Places.all(space: space, calendar: calendar)

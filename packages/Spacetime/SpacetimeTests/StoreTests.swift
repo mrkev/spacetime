@@ -120,3 +120,32 @@ struct ReminderMetaTests {
         #expect(address(store, "deleted") == nil)
     }
 }
+
+@MainActor
+struct SavedSettingsTests {
+    private let storage = MemoryStorage()
+
+    @Test func remembersWhereTheMapWasLeft() {
+        let region = SearchRegion(latitude: 19.43, longitude: -99.13, latitudeDelta: 0.03, longitudeDelta: 0.03)
+        #expect(SpaceStore(storage: storage).savedMapRegion() == nil)
+        SpaceStore(storage: storage).saveMapRegion(region)
+        #expect(SpaceStore(storage: storage).savedMapRegion() == region)
+    }
+
+    @Test func reopensTheTimeTabAtTheLevelItWasLeftOn() {
+        TimeNavigation(storage: storage).remember(.day)
+        let nav = TimeNavigation(storage: storage)
+        nav.openFirstTime()
+        #expect(nav.path.count == 2)
+        if case .day(let day) = nav.path.last { #expect(Dates.isToday(day)) } else { Issue.record("Not on a day") }
+    }
+
+    @Test func remembersTheDayViewsZoomWithinItsLimits() {
+        let nav = TimeNavigation(storage: storage)
+        #expect(nav.savedHourHeight == Timeline.defaultHourHeight)
+        nav.saveHourHeight(100)
+        #expect(TimeNavigation(storage: storage).savedHourHeight == 100)
+        storage.set("9000", forKey: "spacetime.time.hourHeight")
+        #expect(TimeNavigation(storage: storage).savedHourHeight == Timeline.defaultHourHeight)
+    }
+}

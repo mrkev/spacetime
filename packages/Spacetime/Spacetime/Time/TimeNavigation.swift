@@ -17,6 +17,7 @@ enum TimeLevel: String {
 @Observable
 final class TimeNavigation {
     private static let levelKey = "spacetime.time.level"
+    private static let zoomKey = "spacetime.time.hourHeight"
 
     var path: [TimeRoute] = []
     /// The year the month view is showing, which its back button shows.
@@ -27,6 +28,11 @@ final class TimeNavigation {
     var alarmEditor: AlarmEditRequest?
 
     @ObservationIgnored private var opened = false
+    @ObservationIgnored private let storage: KeyValueStorage
+
+    init(storage: KeyValueStorage) {
+        self.storage = storage
+    }
 
     /// Runs as the Time tab is first selected, to reopen it at the level it was left on (showing
     /// today, like Calendar).
@@ -34,7 +40,7 @@ final class TimeNavigation {
         guard !opened else { return }
         opened = true
         let today = Date()
-        switch TimeLevel(rawValue: FileStorage.shared.string(forKey: Self.levelKey) ?? "") ?? .month {
+        switch TimeLevel(rawValue: storage.string(forKey: Self.levelKey) ?? "") ?? .month {
         case .year: path = []
         case .month: path = [.month(Dates.startOfMonth(today))]
         case .day: path = [.month(Dates.startOfMonth(today)), .day(Dates.startOfDay(today))]
@@ -42,8 +48,19 @@ final class TimeNavigation {
     }
 
     /// Records `level` as where to reopen the Time tab.
-    static func remember(_ level: TimeLevel) {
-        FileStorage.shared.set(level.rawValue, forKey: levelKey)
+    func remember(_ level: TimeLevel) {
+        storage.set(level.rawValue, forKey: Self.levelKey)
+    }
+
+    /// How tall an hour of the day view was last zoomed to.
+    var savedHourHeight: CGFloat {
+        let saved = Double(storage.string(forKey: Self.zoomKey) ?? "") ?? 0
+        return saved >= Timeline.minHourHeight && saved <= Timeline.maxHourHeight
+            ? CGFloat(saved) : Timeline.defaultHourHeight
+    }
+
+    func saveHourHeight(_ height: CGFloat) {
+        storage.set(String(Double(height)), forKey: Self.zoomKey)
     }
 
     func isTop(_ route: TimeRoute?) -> Bool {
@@ -68,7 +85,7 @@ struct TimeTab: View {
                     Group {
                         switch route {
                         case .month(let month): MonthView(route: route, initialMonth: month)
-                        case .day(let day): DayView(route: route, initialDay: day)
+                        case .day(let day): DayView(route: route, initialDay: day, hourHeight: nav.savedHourHeight)
                         case .reminders: RemindersView()
                         case .alarms: AlarmsView()
                         }

@@ -27,6 +27,7 @@ struct LocationFields: View {
     var radiusColor: String?
     var fixed = false
 
+    @Environment(SpaceStore.self) private var space
     @State private var query = ""
     @State private var searching = false
 
@@ -81,7 +82,7 @@ struct LocationFields: View {
         let near = state.coordinate.map {
             SearchRegion(latitude: $0.latitude, longitude: $0.longitude, latitudeDelta: searchDelta,
                          longitudeDelta: searchDelta)
-        } ?? MapRegionStore.load()
+        } ?? space.savedMapRegion()
         let text = query
         searching = true
         Task {

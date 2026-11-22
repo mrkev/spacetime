@@ -91,17 +91,3 @@ struct ColorSwatches: View {
         .padding(.vertical, 6)
     }
 }
-
-/// Where the Space map was last left, so it opens near the user even before there's a location fix,
-/// and so searches elsewhere prefer nearby places.
-enum MapRegionStore {
-    private static let key = "spacetime.space.region.v1"
-
-    static func load() -> SearchRegion? {
-        FileStorage.shared.decode(SearchRegion.self, forKey: key)
-    }
-
-    static func save(_ region: SearchRegion) {
-        FileStorage.shared.encode(region, forKey: key)
-    }
-}

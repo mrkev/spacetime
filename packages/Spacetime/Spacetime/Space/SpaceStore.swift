@@ -153,6 +153,18 @@ final class SpaceStore {
             places: [])
     }
 
+    private static let mapRegionKey = "spacetime.space.region.v1"
+
+    /// Where the Space map was last left, so it opens near the user even before there's a location fix,
+    /// and so searches elsewhere prefer nearby places. Not observed: it changes as the map moves.
+    func savedMapRegion() -> SearchRegion? {
+        storage.decode(SearchRegion.self, forKey: Self.mapRegionKey)
+    }
+
+    func saveMapRegion(_ region: SearchRegion) {
+        storage.encode(region, forKey: Self.mapRegionKey)
+    }
+
     private func save() {
         storage.encode(SpaceState(collections: collections, places: places), forKey: Self.storageKey)
     }

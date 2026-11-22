@@ -3,7 +3,6 @@ import SwiftUI
 private let daysEachWay = 730
 private let weeksBefore = Int(ceil(Double(daysEachWay) / 7)) + 1
 private let weekCount = Int(ceil(Double(daysEachWay * 2) / 7)) + 3
-private let zoomKey = "spacetime.time.hourHeight"
 
 /// Where the day pages' timelines are scrolled, shared so swiping keeps the time of day.
 final class TimelineScroll {
@@ -51,13 +50,10 @@ struct DayView: View {
     private let sideways = false
     #endif
 
-    init(route: TimeRoute, initialDay: Date) {
+    init(route: TimeRoute, initialDay: Date, hourHeight height: CGFloat) {
         self.route = route
         let anchor = Dates.startOfDay(initialDay)
         _anchor = State(initialValue: anchor)
-        let saved = Double(FileStorage.shared.string(forKey: zoomKey) ?? "") ?? 0
-        let height = saved >= Timeline.minHourHeight && saved <= Timeline.maxHourHeight
-            ? CGFloat(saved) : Timeline.defaultHourHeight
         _hourHeight = State(initialValue: height)
         // Start the timeline around the current hour (or 7 AM on other days).
         _scroll = State(initialValue: TimelineScroll(
@@ -121,9 +117,9 @@ struct DayView: View {
         }
         .onAppear {
             nav.dayViewDate = selected
-            if nav.isTop(route) { TimeNavigation.remember(.day) }
+            if nav.isTop(route) { nav.remember(.day) }
         }
-        .onChange(of: nav.isTop(route)) { _, top in if top { TimeNavigation.remember(.day) } }
+        .onChange(of: nav.isTop(route)) { _, top in if top { nav.remember(.day) } }
         .onChange(of: dayIndex) {
             selection = nil
             nav.dayViewDate = selected
@@ -178,7 +174,7 @@ struct DayView: View {
         DayPageActions(
             select: { selection = $0.map { TimelineSelection(key: $0, day: dayKey) } },
             gestureActive: { gestureActive = $0 },
-            zoomEnded: { FileStorage.shared.set(String(Double(hourHeight)), forKey: zoomKey) },
+            zoomEnded: { model.time.saveHourHeight(hourHeight) },
             pressReminder: { openReminder = $0 },
             setPlace: { event, span in eventPlace = EventPlaceRequest(event: event, span: span) })
     }

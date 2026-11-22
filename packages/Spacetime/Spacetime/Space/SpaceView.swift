@@ -38,9 +38,9 @@ struct SpaceView: View {
     /// `at` is where MapKit put it; `place` is the place on the map there, or else an unsaved one.
     @State private var poi: (at: Coordinate, place: MapPlace)?
     @State private var notFound = false
-    @State private var initialRegion = MapRegionStore.load()
+    @State private var initialRegion: SearchRegion?
     /// Searches prefer places in view.
-    @State private var visibleRegion = MapRegionStore.load()
+    @State private var visibleRegion: SearchRegion?
     @State private var centeredOnUser = false
     @State private var openPlace: PlaceRequest?
     @State private var newPlace: NewPlaceRequest?
@@ -49,6 +49,12 @@ struct SpaceView: View {
     /// Edit Collections was chosen in the filters' popover; the sheet opens once it's gone.
     @State private var editCollectionsAfterFilters = false
     @FocusState private var searchFocused: Bool
+
+    /// Opens the map at `region`, where it was last left.
+    init(region: SearchRegion?) {
+        _initialRegion = State(initialValue: region)
+        _visibleRegion = State(initialValue: region)
+    }
 
     var body: some View {
         let mapPlaces = Places.all(space: space, calendar: calendar)
@@ -87,7 +93,7 @@ struct SpaceView: View {
                 onLongPress: { addPlace(at: $0) },
                 onRegionChange: { region in
                     visibleRegion = region
-                    MapRegionStore.save(region)
+                    space.saveMapRegion(region)
                 },
                 onTap: { searchFocused = false })
                 .ignoresSafeArea()

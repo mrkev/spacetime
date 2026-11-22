@@ -110,10 +110,10 @@ struct MonthView: View {
         }
         .onAppear {
             showing(visible.top)
-            if nav.isTop(route) { TimeNavigation.remember(.month) }
+            if nav.isTop(route) { nav.remember(.month) }
         }
         .onChange(of: visible.top) { _, top in showing(top) }
-        .onChange(of: nav.isTop(route)) { _, top in if top { TimeNavigation.remember(.month) } }
+        .onChange(of: nav.isTop(route)) { _, top in if top { nav.remember(.month) } }
         .onChange(of: calendar.status) { calendar.ensureMonths(month(visible.top), radius: 2) }
         .onChange(of: model.todayRequests) {
             guard nav.isTop(route) else { return }
