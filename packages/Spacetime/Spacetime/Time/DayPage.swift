@@ -49,6 +49,13 @@ private struct Draft {
     var basis: DayItems?
 }
 
+/// A new event's block, held where it'll go until its editor closes. While `lifted`, it's being
+/// dragged into place.
+private struct NewEventDraft {
+    var range: MinuteRange
+    var lifted: Bool
+}
+
 /// One day's timeline: an all-day area over hours you can scroll, pinch, and drag events around in.
 struct DayPage: View {
     let date: Date
@@ -78,6 +85,9 @@ struct DayPage: View {
     /// Long-pressing empty space while an event is copied offers to paste it there.
     @State private var pasteMinute: Double?
     @State private var pinch: (height: CGFloat, minute: Double, focalY: CGFloat)?
+    @State private var newEvent: NewEventDraft?
+    /// Where the new event's drag started: its range then, and the finger's height in the window.
+    @State private var newEventOrigin: (range: MinuteRange, y: CGFloat)?
     @State private var handledScrollToNow = 0
     @State private var lastHourHeight: CGFloat = 0
 
@@ -114,7 +124,7 @@ struct DayPage: View {
                 }
                 .scrollPosition($position)
                 .scrollIndicators(.hidden)
-                .scrollDisabled(draft?.dragging == true || pinch != nil)
+                .scrollDisabled(draft?.dragging == true || newEvent?.lifted == true || pinch != nil)
                 .onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.y + $0.contentInsets.top }) { _, y in
                     scrollY = y
                     if isCurrent && pinch == nil { scroll.y = y }
@@ -243,8 +253,8 @@ struct DayPage: View {
         let active = activeDraft(items)
         let dragging = active?.dragging == true
         return ZStack(alignment: .topLeading) {
-            // Long-press (on the Mac, double-click) empty space to create an event (or paste one); tap it
-            // to deselect.
+            // Touch and hold (on the Mac, double-click) empty space to create an event (or paste one); tap
+            // it to deselect.
             Color.clear
                 .contentShape(.rect)
                 #if os(iOS)
@@ -252,9 +262,7 @@ struct DayPage: View {
                     onSelect(nil)
                     pasteMinute = nil
                 }
-                .gesture(LongPressRecognizer { phase in
-                    if phase.state == .began { pressedEmpty(atY: phase.localLocation.y) }
-                })
+                .gesture(LongPressRecognizer(action: holdEmpty))
                 #else
                 .onTapGesture(count: 2) { location in pressedEmpty(atY: location.y) }
                 .onTapGesture {
@@ -283,8 +291,13 @@ struct DayPage: View {
             if Dates.isToday(date) {
                 NowIndicator(hourHeight: hourHeight).allowsHitTesting(false)
             }
-            if let active, dragging {
-                DragTimes(range: active.range, date: date, hourHeight: hourHeight).allowsHitTesting(false)
+            if let newEvent {
+                let frame = Timeline.blockFrame(newEvent.range, hourHeight: hourHeight)
+                NewEventBlock(color: calendar.defaultEventColor, lifted: newEvent.lifted)
+                    .frame(width: columnWidth - 2, height: frame.height)
+                    .offset(x: Timeline.gutter, y: frame.top)
+                    .allowsHitTesting(false)
+                    .zIndex(6)
             }
             if let menu = menu(timed, active: active, items: items) {
                 EditMenu(items: menu.items)
@@ -413,7 +426,7 @@ struct DayPage: View {
                 },
                 EditMenu.Item(label: "New Event") {
                     self.pasteMinute = nil
-                    Task { await TimeActions.createEvent(start: at, calendar: calendar) }
+                    createEvent(MinuteRange(startMinute: pasteMinute, endMinute: pasteMinute + 60))
                 },
             ])
         }
@@ -428,9 +441,57 @@ struct DayPage: View {
         if TimeActions.clipboard != nil {
             pasteMinute = minute
         } else {
-            Task {
-                await TimeActions.createEvent(start: Dates.date(date, atMinute: Int(minute)), calendar: calendar)
+            createEvent(MinuteRange(startMinute: minute, endMinute: min(24 * 60, minute + 60)))
+        }
+    }
+
+    /// Shows a new event's block and opens its editor; the block goes once the editor closes, and the
+    /// event, if it was saved, takes its place.
+    private func createEvent(_ range: MinuteRange) {
+        newEvent = NewEventDraft(range: range, lifted: false)
+        let start = Dates.date(date, atMinute: Int(range.startMinute))
+        Task { await TimeActions.createEvent(start: start, calendar: calendar) { newEvent = nil } }
+    }
+
+    /// Like Calendar: touch and hold empty space and an hour-long event appears under your finger;
+    /// drag it into place, and let go to open its editor.
+    private func holdEmpty(_ phase: GesturePhase) {
+        switch phase.state {
+        case .began:
+            // With an event copied, holding offers to paste it instead.
+            guard TimeActions.clipboard == nil, newEvent == nil else {
+                pressedEmpty(atY: phase.localLocation.y)
+                return
             }
+            onSelect(nil)
+            pasteMinute = nil
+            let finger = Double((phase.localLocation.y - Timeline.padding) / hourHeight * 60)
+            let start = max(0, min(23 * 60, Editing.snap(finger - 30)))
+            let range = MinuteRange(startMinute: start, endMinute: start + 60)
+            newEventOrigin = (range, phase.location.y)
+            newEvent = NewEventDraft(range: range, lifted: true)
+            onGestureActive(true)
+            Haptics.impact()
+        case .changed:
+            guard let origin = newEventOrigin, var current = newEvent else { return }
+            let delta = Double((phase.location.y - origin.y) / hourHeight * 60)
+            let range = Editing.drag(origin.range, mode: .move, deltaMinutes: delta)
+            guard range != current.range else { return }
+            current.range = range
+            newEvent = current
+            Haptics.selection()
+        case .ended:
+            guard newEventOrigin != nil, let current = newEvent else { return }
+            newEventOrigin = nil
+            onGestureActive(false)
+            withAnimation(.snappy(duration: 0.2)) { newEvent?.lifted = false }
+            let start = Dates.date(date, atMinute: Int(current.range.startMinute))
+            Task { await TimeActions.createEvent(start: start, calendar: calendar) { newEvent = nil } }
+        case .cancelled:
+            guard newEventOrigin != nil else { return }
+            newEventOrigin = nil
+            newEvent = nil
+            onGestureActive(false)
         }
     }
 
@@ -574,6 +635,39 @@ private struct EventBlock: View {
     }
 }
 
+/// A new event's block, in the calendar it'll be saved to. It pops in, like Calendar's, and has
+/// handles once it's set down (only to show it can be resized; the editor sets its times).
+private struct NewEventBlock: View {
+    let color: String
+    let lifted: Bool
+    @State private var popped = false
+
+    var body: some View {
+        Text("New Event")
+            .font(.system(size: 12, weight: .semibold))
+            .foregroundStyle(.white)
+            .padding(.horizontal, 5)
+            .padding(.vertical, Timeline.blockPadding)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            .background(Color(hex: color), in: .rect(cornerRadius: 4))
+            .shadow(color: .black.opacity(lifted ? 0.3 : 0), radius: 8, y: 4)
+            .overlay(alignment: .topTrailing) {
+                if !lifted {
+                    Handle(color: color).offset(x: Timeline.handleHit / 2 - 12, y: -Timeline.handleHit / 2)
+                }
+            }
+            .overlay(alignment: .bottomLeading) {
+                if !lifted {
+                    Handle(color: color).offset(x: 24 - Timeline.handleHit / 2, y: Timeline.handleHit / 2)
+                }
+            }
+            .scaleEffect(popped ? 1 : 1.08)
+            .onAppear { withAnimation(.spring(duration: 0.35, bounce: 0.45)) { popped = true } }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("New Event")
+    }
+}
+
 private struct Handle: View {
     let color: String
 
@@ -651,27 +745,6 @@ private struct ReminderChip: View {
         .overlay { RoundedRectangle(cornerRadius: 4).stroke(Color(hex: reminder.color), lineWidth: 1) }
         .contentShape(.rect)
         .onTapGesture { onPress(reminder) }
-    }
-}
-
-/// While dragging, the gutter shows the times the event would start and end at.
-private struct DragTimes: View {
-    let range: MinuteRange
-    let date: Date
-    let hourHeight: CGFloat
-
-    var body: some View {
-        ZStack(alignment: .topLeading) {
-            ForEach([range.startMinute, range.endMinute], id: \.self) { minute in
-                Text(Dates.formatTime(Dates.date(date, atMinute: Int(minute))))
-                    .font(.system(size: 11, weight: .semibold))
-                    .minimumScaleFactor(0.7)
-                    .lineLimit(1)
-                    .frame(width: Timeline.gutter - 4, height: 16, alignment: .trailing)
-                    .background(Theme.background)
-                    .offset(y: Timeline.y(minute: minute, hourHeight: hourHeight) - 8)
-            }
-        }
     }
 }
 

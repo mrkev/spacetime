@@ -60,14 +60,18 @@ enum TimeActions {
         return choice.map { $0 == 0 ? .this : .future }
     }
 
-    /// Opens the system editor for a new event, optionally at a place.
-    static func createEvent(start: Date? = nil, place: EventLocation? = nil, calendar: CalendarStore) async {
+    /// Opens the system editor for a new event, optionally at a place. `onClose` runs once the editor
+    /// is gone, or right away if it couldn't open.
+    static func createEvent(start: Date? = nil, place: EventLocation? = nil, calendar: CalendarStore,
+                            onClose: @escaping () -> Void = {}) async {
         guard calendar.status == .granted else {
             await calendar.requestAccess()
+            onClose()
             return
         }
         guard let target = calendar.defaultEventCalendar() else {
             Presenter.alert(title: "No Calendar", message: "Add a calendar account in Settings to create events.")
+            onClose()
             return
         }
         let startDate = start ?? defaultStart()
@@ -81,16 +85,24 @@ enum TimeActions {
         }
         #if os(iOS)
         // The system editor, so events get every field Calendar supports.
-        let editor = EKEventEditViewController()
+        let editor = NewEventEditor()
         editor.eventStore = calendar.store
         editor.event = event
+        editor.onClose = onClose
         let delegate = EditorDelegate { calendar.refresh() }
         editor.editViewDelegate = delegate
         delegate.retain(in: editor)
-        Presenter.topViewController?.present(editor, animated: true)
+        guard let presenter = Presenter.topViewController else {
+            onClose()
+            return
+        }
+        presenter.present(editor, animated: true)
         #else
         Presenter.present { close in
-            EventEditorView(event: event, occurrence: nil, calendar: calendar, close: close)
+            EventEditorView(event: event, occurrence: nil, calendar: calendar, close: {
+                close()
+                onClose()
+            })
         }
         #endif
     }
@@ -223,6 +235,18 @@ private final class ToolbarlessNavigationController: UINavigationController {
     override var isToolbarHidden: Bool {
         get { super.isToolbarHidden }
         set { super.isToolbarHidden = true }
+    }
+}
+
+/// The system's new-event editor, saying when it's gone: saved, cancelled, or swiped away.
+private final class NewEventEditor: EKEventEditViewController {
+    var onClose: (() -> Void)?
+
+    override func viewDidDisappear(_ animated: Bool) {
+        super.viewDidDisappear(animated)
+        guard isBeingDismissed, let onClose else { return }
+        self.onClose = nil
+        onClose()
     }
 }
 

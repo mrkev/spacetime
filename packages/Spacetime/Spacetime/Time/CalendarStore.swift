@@ -357,6 +357,11 @@ final class CalendarStore {
         return eventCalendars.first(where: \.allowsContentModifications)
     }
 
+    /// The color of the calendar new events go into, for drawing one before it's saved.
+    var defaultEventColor: String {
+        defaultEventCalendar().map { Hex.string(from: $0.cgColor) } ?? Theme.blueHex
+    }
+
     /// A writable event calendar by ID.
     func writableCalendar(_ id: String) -> EKCalendar? {
         guard let calendar = store.calendar(withIdentifier: id), calendar.allowsContentModifications else {
