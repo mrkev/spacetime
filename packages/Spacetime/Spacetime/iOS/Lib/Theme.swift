@@ -17,6 +17,32 @@ enum Theme {
 
     /// Alarms are orange, like Clock's.
     static let alarm = Color.orange
+
+    /// An event's fill, in its calendar's color, as strong as Calendar's.
+    static func eventFill(_ hex: String) -> Color {
+        Color(hex: hex).opacity(0.28)
+    }
+
+    /// An event's text, in its calendar's color like Calendar's: the color itself in dark mode, and
+    /// darker in light mode, to read on its fill.
+    static func eventText(_ hex: String) -> Color {
+        let color = UIColor(hex: hex)
+        return Color(uiColor: UIColor { traits in
+            guard traits.userInterfaceStyle != .dark else { return color }
+            var r: CGFloat = 0, g: CGFloat = 0, b: CGFloat = 0, a: CGFloat = 0
+            color.getRed(&r, green: &g, blue: &b, alpha: &a)
+            return UIColor(red: r * 0.55, green: g * 0.55, blue: b * 0.55, alpha: a)
+        })
+    }
+}
+
+extension View {
+    /// Outlines a timeline block drawn over another in the background's color, so the two stay apart.
+    func stacked(_ stacked: Bool) -> some View {
+        background {
+            if stacked { RoundedRectangle(cornerRadius: 5).fill(Theme.background).padding(-1) }
+        }
+    }
 }
 
 extension Color {

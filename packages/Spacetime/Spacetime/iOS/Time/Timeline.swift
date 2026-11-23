@@ -16,6 +16,10 @@ enum Timeline {
     static let titleLine: CGFloat = 15
     static let subtitleLine: CGFloat = 14
     static let blockPadding: CGFloat = 2
+    /// An event starting once this much of one it overlaps is in sight, enough for its title and a
+    /// line, is drawn over it rather than beside it, indented by `stackIndent` for each it's over.
+    static let stackRoom: CGFloat = titleLine * 2 + blockPadding * 2
+    static let stackIndent: CGFloat = 10
     static let menuHeight: CGFloat = 44
 
     /// Where the timeline scrolls to show the current time: an hour above it.

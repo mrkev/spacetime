@@ -243,11 +243,12 @@ private struct DayStrip: View {
                     StickyLabel {
                         Text(event.title)
                             .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(Theme.eventText(event.color))
                             .lineLimit(1)
                             .padding(.horizontal, 6)
                     }
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-                        .background(Color(hex: event.color).opacity(0.22), in: .rect(cornerRadius: 4))
+                        .background(Theme.eventFill(event.color), in: .rect(cornerRadius: 4))
                         .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
@@ -342,12 +343,13 @@ private struct EventBar: View {
                 }
             }
             .lineLimit(1)
+            .foregroundStyle(Theme.eventText(event.color))
             .padding(.leading, 7)
             .padding(.trailing, 4)
             .padding(.vertical, 4)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(color.opacity(0.22))
+        .background(Theme.eventFill(event.color))
         .overlay(alignment: .leading) { Rectangle().fill(color).frame(width: 3) }
         .clipShape(.rect(cornerRadius: 4))
         .contentShape(.rect)

@@ -33,7 +33,7 @@ struct EventBlock: View {
 
     var body: some View {
         let color = Color(hex: event.color)
-        let textColor = selected ? Color.white : Color.primary
+        let textColor = selected ? Color.white : Theme.eventText(event.color)
         // The block's position already says when it is, so it shows the title, plus the location when
         // there's a spare line for it.
         let inner = height - Timeline.blockPadding * 2
@@ -54,7 +54,7 @@ struct EventBlock: View {
         .padding(.horizontal, 5)
         .padding(.vertical, Timeline.blockPadding)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
-        .background(selected ? color : color.opacity(0.22))
+        .background(selected ? color : Theme.eventFill(event.color))
         .overlay(alignment: .leading) { Rectangle().fill(color).frame(width: 3) }
         .clipShape(.rect(cornerRadius: 4))
         .background {

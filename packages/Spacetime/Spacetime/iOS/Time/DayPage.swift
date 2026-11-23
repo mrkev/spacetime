@@ -131,7 +131,8 @@ struct DayPage: View {
         // they're laid out with the minutes that height covers at this zoom.
         DayTimeline(day: date, items: items, alarms: alarms.alarms(on: date),
                     pointMinutes: Double((Timeline.reminderHeight + 2) / hourHeight * 60),
-                    minMinutes: Double((Timeline.minBlockHeight + 2) / hourHeight * 60))
+                    minMinutes: Double((Timeline.minBlockHeight + 2) / hourHeight * 60),
+                    stackMinutes: Double(Timeline.stackRoom / hourHeight * 60))
     }
 
     private func activeDraft(_ items: DayItems?) -> Draft? {
@@ -166,11 +167,12 @@ struct DayPage: View {
                     Button { TimeActions.openEvent(event, calendar: calendar) } label: {
                         Text(event.title)
                             .font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Theme.eventText(event.color))
                             .lineLimit(1)
                             .frame(maxWidth: .infinity, alignment: .leading)
                             .padding(.horizontal, 6)
                             .padding(.vertical, 3)
-                            .background(Color(hex: event.color).opacity(0.22), in: .rect(cornerRadius: 4))
+                            .background(Theme.eventFill(event.color), in: .rect(cornerRadius: 4))
                     }
                     .buttonStyle(.plain)
                 }
@@ -208,17 +210,17 @@ struct DayPage: View {
                 case .event(let event):
                     eventBlock(event, entry: entry, active: active, items: items, columnWidth: columnWidth)
                 case .reminder(let reminder):
-                    let w = columnWidth / CGFloat(entry.columns)
+                    let x = blockX(entry, columnWidth: columnWidth)
                     ReminderBlock(reminder: reminder, onPress: actions.pressReminder)
-                        .frame(width: w - 2, height: Timeline.reminderHeight)
-                        .offset(x: Timeline.gutter + CGFloat(entry.column) * w,
-                                y: Timeline.y(minute: entry.range.startMinute, hourHeight: hourHeight))
+                        .frame(width: x.width, height: Timeline.reminderHeight)
+                        .stacked(entry.depth > 0)
+                        .offset(x: x.left, y: Timeline.y(minute: entry.range.startMinute, hourHeight: hourHeight))
                 case .alarm(let alarm):
-                    let w = columnWidth / CGFloat(entry.columns)
+                    let x = blockX(entry, columnWidth: columnWidth)
                     AlarmBlock(alarm: alarm) { model.time.alarmEditor = AlarmEditRequest(alarm: alarm) }
-                        .frame(width: w - 2, height: Timeline.reminderHeight)
-                        .offset(x: Timeline.gutter + CGFloat(entry.column) * w,
-                                y: Timeline.y(minute: entry.range.startMinute, hourHeight: hourHeight))
+                        .frame(width: x.width, height: Timeline.reminderHeight)
+                        .stacked(entry.depth > 0)
+                        .offset(x: x.left, y: Timeline.y(minute: entry.range.startMinute, hourHeight: hourHeight))
                 }
             }
 
@@ -247,7 +249,7 @@ struct DayPage: View {
                             columnWidth: CGFloat) -> some View {
         let range = active?.key == entry.key ? active!.range : entry.range
         let frame = Timeline.blockFrame(range, hourHeight: hourHeight)
-        let w = columnWidth / CGFloat(entry.columns)
+        let x = blockX(entry, columnWidth: columnWidth)
         let selected = isSelected(entry.key, items)
         let lifted = active?.key == entry.key && active?.dragging == true
         let draggable = event.canDrag(on: Dates.startOfDay(date))
@@ -257,7 +259,8 @@ struct DayPage: View {
         let start = event.start.addingTimeInterval((range.startMinute - entry.range.startMinute) * 60)
         EventBlock(event: event, height: frame.height, selected: selected, lifted: lifted,
                    editing: selected && draggable)
-            .frame(width: w - 2, height: frame.height)
+            .frame(width: x.width, height: frame.height)
+            .stacked(entry.depth > 0 && !lifted)
             .accessibilityElement(children: .ignore)
             .accessibilityLabel("\(event.title), \(Dates.formatTime(start))")
             .accessibilityHint(draggable ? "Touch and hold to move" : "")
@@ -292,8 +295,15 @@ struct DayPage: View {
                         .offset(x: 24 - Timeline.handleHit / 2, y: Timeline.handleHit / 2)
                 }
             }
-            .offset(x: Timeline.gutter + CGFloat(entry.column) * w, y: frame.top)
+            .offset(x: x.left, y: frame.top)
             .zIndex(lifted ? 5 : selected ? 1 : 0)
+    }
+
+    /// Where a block goes across the timeline: its column, indented for each block it's drawn over.
+    private func blockX(_ entry: PositionedItem<TimelineEntry>, columnWidth: CGFloat) -> (left: CGFloat, width: CGFloat) {
+        let w = columnWidth / CGFloat(entry.columns)
+        let indent = CGFloat(entry.depth) * Timeline.stackIndent
+        return (Timeline.gutter + CGFloat(entry.column) * w + indent, max(Timeline.minBlockHeight, w - 2 - indent))
     }
 
     private func menu(_ timed: [PositionedItem<TimelineEntry>], active: Draft?, items: DayItems?)

@@ -10,8 +10,12 @@ nonisolated struct PositionedItem<Item>: Identifiable {
     var item: Item
     var key: String
     var range: MinuteRange
+    /// Which of its group's side-by-side columns it's in, and how many there are.
     var column: Int
     var columns: Int
+    /// How many items that started well before it it's drawn over at their left edge, each indenting
+    /// it a little so their edges stay in sight.
+    var depth = 0
 
     var id: String { key }
 }
@@ -20,43 +24,71 @@ nonisolated enum TimelineLayout {
     /// Short items still take up this much room by default, so they don't visually collide.
     static let minVisualMinutes: Double = 20
 
-    /// Lays out overlapping items side by side, the way Calendar does: items that overlap form a
-    /// cluster, each item takes the first free column, and every item in a cluster shares its width.
+    /// Lays out overlapping items the way Calendar does. Items that overlap and start within
+    /// `stackMinutes` of each other are a group, side by side: each takes the first free column, and
+    /// they share the width. An item starting later than that, once the earlier one's title is in
+    /// sight, is drawn over it instead, as wide as its own group, and indented by its `depth`.
+    ///
+    /// The result is in order of start, so later items are drawn over earlier ones.
     static func layout<Item>(_ items: [(key: String, range: MinuteRange, item: Item)],
-                             minVisualMinutes: Double = minVisualMinutes) -> [PositionedItem<Item>] {
+                             minVisualMinutes: Double = minVisualMinutes,
+                             stackMinutes: Double = .infinity) -> [PositionedItem<Item>] {
         let sorted = items.sorted {
             $0.range.startMinute != $1.range.startMinute
                 ? $0.range.startMinute < $1.range.startMinute
                 : $0.range.endMinute > $1.range.endMinute
         }
-        var result: [PositionedItem<Item>] = []
-        var cluster: [PositionedItem<Item>] = []
-        var columnEnds: [Double] = []
-        var clusterEnd = -Double.infinity
+        let starts = sorted.map(\.range.startMinute)
+        let ends = sorted.map { max($0.range.endMinute, $0.range.startMinute + minVisualMinutes) }
+        let count = sorted.count
 
-        func flush() {
-            for i in cluster.indices { cluster[i].columns = columnEnds.count }
-            result.append(contentsOf: cluster)
-            cluster = []
-            columnEnds = []
-        }
-
-        for entry in sorted {
-            let visualEnd = max(entry.range.endMinute, entry.range.startMinute + minVisualMinutes)
-            if entry.range.startMinute >= clusterEnd { flush() }
-            var column = columnEnds.firstIndex { $0 <= entry.range.startMinute } ?? -1
-            if column == -1 {
-                column = columnEnds.count
-                columnEnds.append(visualEnd)
-            } else {
-                columnEnds[column] = visualEnd
+        // The groups, joining each item with the earlier ones it overlaps and starts soon after.
+        var parent = Array(0..<count)
+        func group(_ i: Int) -> Int {
+            var i = i
+            while parent[i] != i {
+                parent[i] = parent[parent[i]]
+                i = parent[i]
             }
-            cluster.append(PositionedItem(item: entry.item, key: entry.key, range: entry.range, column: column,
-                                          columns: 1))
-            clusterEnd = max(clusterEnd, visualEnd)
+            return i
         }
-        flush()
-        return result
+        for j in 0..<count {
+            for i in 0..<j where ends[i] > starts[j] && starts[j] - starts[i] < stackMinutes {
+                parent[group(j)] = group(i)
+            }
+        }
+
+        // Columns within each group, reusing one once what's in it has ended.
+        var columnEnds: [Int: [Double]] = [:]
+        var column = [Int](repeating: 0, count: count)
+        for j in 0..<count {
+            var groupEnds = columnEnds[group(j), default: []]
+            if let free = groupEnds.firstIndex(where: { $0 <= starts[j] }) {
+                column[j] = free
+                groupEnds[free] = ends[j]
+            } else {
+                column[j] = groupEnds.count
+                groupEnds.append(ends[j])
+            }
+            columnEnds[group(j)] = groupEnds
+        }
+        func left(_ i: Int) -> Double {
+            Double(column[i]) / Double(columnEnds[group(i)]!.count)
+        }
+
+        // How deep each item is drawn over earlier items, from other groups, whose left edge (and color
+        // stripe) it would cover.
+        var depth = [Int](repeating: 0, count: count)
+        for j in 0..<count {
+            for i in 0..<j where group(i) != group(j) && ends[i] > starts[j] && abs(left(i) - left(j)) < 1e-9 {
+                depth[j] = max(depth[j], depth[i] + 1)
+            }
+        }
+
+        return sorted.indices.map { i in
+            PositionedItem(item: sorted[i].item, key: sorted[i].key, range: sorted[i].range, column: column[i],
+                           columns: columnEnds[group(i)]!.count, depth: depth[i])
+        }
     }
 }
 
@@ -133,8 +165,10 @@ struct DayTimeline {
 
     /// Events spanning the whole of `day` go in the all-day area with all-day ones; the rest are cut to
     /// the part on this day. Reminders and alarms are moments, laid out as if they took `pointMinutes`
-    /// (the room they're drawn in), and short events as if they took `minMinutes`.
-    init(day: Date, items: DayItems?, alarms: [SpacetimeAlarm], pointMinutes: Double, minMinutes: Double) {
+    /// (the room they're drawn in), and short events as if they took `minMinutes`. An item starting
+    /// `stackMinutes` after one it overlaps is drawn over it (see `TimelineLayout.layout`).
+    init(day: Date, items: DayItems?, alarms: [SpacetimeAlarm], pointMinutes: Double, minMinutes: Double,
+         stackMinutes: Double = .infinity) {
         let dayStart = Dates.startOfDay(day)
         let dayEnd = Dates.addDays(dayStart, 1)
         var timed: [(key: String, range: MinuteRange, item: TimelineEntry)] = []
@@ -161,6 +195,6 @@ struct DayTimeline {
             timed.append(("alarm:\(alarm.id)", MinuteRange(startMinute: start, endMinute: start + pointMinutes),
                           .alarm(alarm)))
         }
-        self.timed = TimelineLayout.layout(timed, minVisualMinutes: minMinutes)
+        self.timed = TimelineLayout.layout(timed, minVisualMinutes: minMinutes, stackMinutes: stackMinutes)
     }
 }

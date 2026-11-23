@@ -50,6 +50,44 @@ struct LayoutTests {
         #expect(result["short"]!.column == 1)
     }
 
+    /// The day in Calendar's screenshot: a long on-call shift, three meetings starting soon after it,
+    /// and two that start hours into it.
+    @Test func drawsItemsStartingWellAfterAnotherOverIt() {
+        let result = byKey(TimelineLayout.layout([
+            item("retro", 690, 750), item("onCall", 750, 1440), item("cbq", 750, 780), item("hfc", 765, 810),
+            item("ask", 780, 810), item("artifact", 930, 960), item("yanshan", 1080, 1110),
+        ], stackMinutes: 36))
+        #expect(result["retro"]!.columns == 1)
+        // Starting within 36 minutes of each other, these are side by side.
+        #expect(result["onCall"]!.column == 0 && result["onCall"]!.columns == 3)
+        #expect(result["cbq"]!.column == 1 && result["hfc"]!.column == 2 && result["ask"]!.column == 1)
+        #expect(result["onCall"]!.depth == 0 && result["ask"]!.depth == 0)
+        // Hours later, these take the whole width, over the shift and indented once.
+        #expect(result["artifact"]!.column == 0 && result["artifact"]!.columns == 1 && result["artifact"]!.depth == 1)
+        #expect(result["yanshan"]!.columns == 1 && result["yanshan"]!.depth == 1)
+    }
+
+    @Test func indentsOnlyItemsCoveringTheLeftEdgeOfTheOneUnder() {
+        // b and c start together, side by side, over a; only b, on a's left edge, is indented.
+        let result = byKey(TimelineLayout.layout([item("a", 540, 720), item("b", 600, 660), item("c", 600, 650)],
+                                                 stackMinutes: 30))
+        #expect(result["a"]!.columns == 1)
+        #expect(result["b"]!.columns == 2 && result["b"]!.depth == 1)
+        #expect(result["c"]!.column == 1 && result["c"]!.depth == 0)
+    }
+
+    @Test func nestsItemsDrawnOverItemsDrawnOverOthers() {
+        let result = byKey(TimelineLayout.layout([item("a", 540, 900), item("b", 600, 840), item("c", 660, 720)],
+                                                 stackMinutes: 30))
+        #expect(result["b"]!.depth == 1)
+        #expect(result["c"]!.depth == 2)
+    }
+
+    @Test func returnsItemsInOrderOfStartSoLaterOnesAreDrawnOnTop() {
+        let result = TimelineLayout.layout([item("late", 700, 760), item("early", 540, 900)], stackMinutes: 30)
+        #expect(result.map(\.key) == ["early", "late"])
+    }
+
     @Test func givesShortItemsRoomForTheirDrawnHeightWhenZoomedOut() {
         // Five-minute items ten minutes apart only collide once their minimum height covers the gap.
         let items = [item("a", 540, 545), item("b", 550, 555)]
