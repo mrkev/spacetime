@@ -136,8 +136,13 @@ struct SavedSettingsTests {
         TimeNavigation(storage: storage).remember(.day)
         let nav = TimeNavigation(storage: storage)
         nav.openFirstTime()
+#if os(iOS)
+        #expect(nav.level == .day)
+        #expect(Dates.isToday(nav.day))
+#else
         #expect(nav.path.count == 2)
         if case .day(let day) = nav.path.last { #expect(Dates.isToday(day)) } else { Issue.record("Not on a day") }
+#endif
     }
 
     @Test func remembersTheDayViewsZoomWithinItsLimits() {

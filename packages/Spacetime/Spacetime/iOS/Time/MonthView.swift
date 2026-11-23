@@ -10,6 +10,11 @@ private func weeksInMonth(_ month: Date) -> Int {
     Int(ceil(Double(Dates.weekday(month) + Dates.daysInMonth(month)) / 7))
 }
 
+/// Which row of `month` `day` is in.
+private func weekIndex(of day: Date, in month: Date) -> Int {
+    (Dates.weekday(month) + Calendar.current.component(.day, from: day) - 1) / 7
+}
+
 /// Where each month is in the list. Months are four to six weeks tall, so they're placed by hand: a
 /// lazy stack guesses the heights of months it hasn't drawn, so starting one on this month, 120 months
 /// in, landed several months off.
@@ -45,18 +50,14 @@ private struct VisibleMonths: Equatable {
 
 /// A scrolling list of months, like Calendar's month view.
 struct MonthView: View {
-    let route: TimeRoute
-
     @Environment(AppModel.self) private var model
     @Environment(CalendarStore.self) private var calendar
     @State private var position: ScrollPosition
     @State private var visible: VisibleMonths
-    @State private var newReminder: NewReminderRequest?
     private let thisMonth: Date
     private let column: MonthColumn
 
-    init(route: TimeRoute, initialMonth: Date) {
-        self.route = route
+    init(initialMonth: Date) {
         let thisMonth = Dates.startOfMonth(Date())
         self.thisMonth = thisMonth
         let column = MonthColumn(thisMonth: thisMonth)
@@ -71,6 +72,10 @@ struct MonthView: View {
 
     var body: some View {
         let nav = model.time
+        let transition = nav.transition
+        // The month a transition zooms or splits.
+        let anchorMonth = transition.map { $0.isZoom ? $0.month : Dates.startOfMonth($0.day) }
+        let split = nav.monthSplit
         VStack(spacing: 0) {
             WeekdayHeader()
             AccessBanner()
@@ -78,8 +83,10 @@ struct MonthView: View {
                 ZStack(alignment: .top) {
                     Color.clear.frame(height: column.height)
                     ForEach(Array(visible.drawn), id: \.self) { offset in
-                        MonthItem(month: month(offset)) { day in nav.path.append(.day(day)) }
+                        let month = month(offset)
+                        MonthItem(month: month, split: split) { day in nav.show(.day, day: day) }
                             .frame(height: column.height(offset))
+                            .reportsFrame(for: anchorMonth == month ? transition?.id : nil) { report($0, month) }
                             .alignmentGuide(.top) { _ in -column.top(offset) }
                     }
                 }
@@ -99,37 +106,45 @@ struct MonthView: View {
             }
         }
         .background(Theme.background)
-        // Like Calendar, the day view's back button names the month it's in.
-        .navigationTitle(Dates.formatMonth(nav.dayViewDate))
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .principal) { Text("") }
-            TimeToolbar(onNewReminder: { newReminder = NewReminderRequest(date: $0) })
-        }
-        .sheet(item: $newReminder) { request in
-            NavigationStack { ReminderEditorView(date: request.date) }
-        }
-        .onAppear {
-            showing(visible.top)
-            if nav.isTop(route) { nav.remember(.month) }
-        }
+        .onAppear { showing(visible.top) }
         .onChange(of: visible.top) { _, top in showing(top) }
-        .onChange(of: nav.isTop(route)) { _, top in if top { nav.remember(.month) } }
         .onChange(of: calendar.status) { calendar.ensureMonths(month(visible.top), radius: 2) }
         .onChange(of: model.todayRequests) {
-            guard nav.isTop(route) else { return }
+            guard nav.isShowing(.month) else { return }
             withAnimation { position.scrollTo(y: column.top(0)) }
         }
     }
 
-    /// Loads the months around the one at the top, and shows its year on the year view's back button.
+    /// Reports where the transition's anchor is, from the frame of its month: the month's grid of
+    /// days, for a zoom, or the week that becomes the day view's strip.
+    private func report(_ frame: CGRect, _ month: Date) {
+        guard let transition = model.time.transition else { return }
+        let grid = frame.minY + titleHeight
+        let anchor = transition.isZoom
+            ? CGRect(x: frame.minX, y: grid, width: frame.width, height: CGFloat(weeksInMonth(month)) * weekHeight)
+            : CGRect(x: frame.minX, y: grid + CGFloat(weekIndex(of: transition.day, in: month)) * weekHeight,
+                     width: frame.width, height: weekHeight)
+        model.time.report(.month, anchor, transition: transition.id)
+    }
+
+    /// Loads the months around the one at the top, which the back button shows the year of.
     private func showing(_ offset: Int) {
-        model.time.monthViewYear = Calendar.current.component(.year, from: month(offset))
+        if model.time.transition == nil { model.time.month = month(offset) }
         calendar.ensureMonths(month(offset), radius: 2)
     }
 }
 
+/// The month view's weekday letters, over a line.
 struct WeekdayHeader: View {
+    var body: some View {
+        WeekdayLetters()
+            .padding(.bottom, 6)
+            .overlay(alignment: .bottom) { Divider() }
+    }
+}
+
+/// The weekday letters over the month and day views, which stay put between them.
+struct WeekdayLetters: View {
     var body: some View {
         HStack(spacing: 0) {
             ForEach(Array(Dates.weekdayLabels().enumerated()), id: \.offset) { _, label in
@@ -139,15 +154,26 @@ struct WeekdayHeader: View {
                     .frame(maxWidth: .infinity)
             }
         }
-        .padding(.vertical, 6)
-        .overlay(alignment: .bottom) { Divider() }
+        .padding(.top, 6)
+        .background(Theme.background)
     }
 }
 
 private struct MonthItem: View {
     let month: Date
+    let split: MonthSplit?
     let onPressDay: (Date) -> Void
     @Environment(CalendarStore.self) private var calendar
+
+    /// How far a row moves, and how faded it is, as the month view splits at a week: the title is row
+    /// -1.
+    private func moved(_ row: Int) -> (y: CGFloat, opacity: Double) {
+        guard let split else { return (0, 1) }
+        let months = Dates.differenceInMonths(month, Dates.startOfMonth(split.day))
+        let splitRow = months == 0 ? weekIndex(of: split.day, in: month) : months > 0 ? Int.max : Int.min
+        if row == splitRow { return (split.up, 1) }
+        return (row < splitRow ? split.up : split.down, split.opacity)
+    }
 
     var body: some View {
         let leading = Dates.weekday(month)
@@ -163,7 +189,8 @@ private struct MonthItem: View {
                     .frame(width: cellWidth)
                     .padding(.bottom, 6)
                     .frame(maxWidth: .infinity, maxHeight: titleHeight, alignment: .bottomLeading)
-                    .offset(x: CGFloat(leading) * cellWidth)
+                    .offset(x: CGFloat(leading) * cellWidth, y: moved(-1).y)
+                    .opacity(moved(-1).opacity)
                 ForEach(0..<weeks, id: \.self) { week in
                     HStack(spacing: 0) {
                         ForEach(0..<7, id: \.self) { weekday in
@@ -180,6 +207,8 @@ private struct MonthItem: View {
                         }
                     }
                     .frame(height: weekHeight)
+                    .offset(y: moved(week).y)
+                    .opacity(moved(week).opacity)
                 }
             }
         }

@@ -4,6 +4,7 @@ import SwiftUI
 private let daysEachWay = 730
 private let weeksBefore = Int(ceil(Double(daysEachWay) / 7)) + 1
 private let weekCount = Int(ceil(Double(daysEachWay * 2) / 7)) + 3
+private let stripHeight: CGFloat = 42
 
 /// Where the day pages' timelines are scrolled, shared so swiping keeps the time of day.
 final class TimelineScroll {
@@ -26,8 +27,6 @@ struct EventPlaceRequest: Identifiable {
 
 /// A week strip over a swipeable timeline of days, like Calendar's day view.
 struct DayView: View {
-    let route: TimeRoute
-
     @Environment(AppModel.self) private var model
     @Environment(CalendarStore.self) private var calendar
     /// Pages are indexed relative to a fixed anchor so indices stay stable while swiping.
@@ -40,15 +39,13 @@ struct DayView: View {
     @State private var hourHeight: CGFloat
     @State private var scroll: TimelineScroll
     @State private var scrollToNow = 0
-    @State private var newReminder: NewReminderRequest?
     @State private var openReminder: CalendarReminder?
     @State private var eventPlace: EventPlaceRequest?
     @Environment(\.verticalSizeClass) private var verticalSizeClass
     /// A phone on its side, which shows the days as one continuous timeline.
     private var sideways: Bool { verticalSizeClass == .compact }
 
-    init(route: TimeRoute, initialDay: Date, hourHeight height: CGFloat) {
-        self.route = route
+    init(initialDay: Date, hourHeight height: CGFloat) {
         let anchor = Dates.startOfDay(initialDay)
         _anchor = State(initialValue: anchor)
         _hourHeight = State(initialValue: height)
@@ -77,40 +74,23 @@ struct DayView: View {
         Group {
             if sideways {
                 // Over where the hidden bars were; the sides stay clear of the camera.
-                continuousTimeline.ignoresSafeArea(edges: .vertical)
+                continuousTimeline.background(Theme.background).ignoresSafeArea(edges: .vertical)
             } else {
                 pager
             }
         }
         .barsHidden(sideways)
-        .allowsLandscape(nav.isTop(route) && model.tab == .time)
-        .background(Theme.background)
-        .navigationTitle("")
-        .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .primaryAction) {
-                AddMenu(day: selected) { newReminder = NewReminderRequest(date: $0) } onNewAlarm: {
-                    model.time.alarmEditor = AlarmEditRequest(day: $0)
-                }
-            }
-        }
-        .sheet(item: $newReminder) { request in
-            NavigationStack { ReminderEditorView(date: request.date) }
-        }
+        .allowsLandscape(nav.isShowing(.day) && model.tab == .time)
         .sheet(item: $openReminder) { reminder in
             ReminderDetailsView(id: reminder.key)
         }
         .sheet(item: $eventPlace) { request in
             NavigationStack { EventPlaceView(event: request.event, span: request.span) }
         }
-        .onAppear {
-            nav.dayViewDate = selected
-            if nav.isTop(route) { nav.remember(.day) }
-        }
-        .onChange(of: nav.isTop(route)) { _, top in if top { nav.remember(.day) } }
+        .onAppear { nav.day = selected }
         .onChange(of: dayIndex) {
             selection = nil
-            nav.dayViewDate = selected
+            nav.day = selected
             let week = weekIndexFor(selected)
             if weekIndex != week { withAnimation { weekIndex = week } }
         }
@@ -120,7 +100,7 @@ struct DayView: View {
             select(Dates.addDays(weekFor(index), Dates.weekday(selected)))
         }
         .onChange(of: model.todayRequests) {
-            guard nav.isTop(route) else { return }
+            guard nav.isShowing(.day) else { return }
             // Go to today's page and bring the current-time indicator into view.
             scroll.y = Timeline.nowOffset(hourHeight: hourHeight)
             select(Date())
@@ -129,33 +109,58 @@ struct DayView: View {
     }
 
     /// The week strip over a page per day.
+    ///
+    /// Between the month and day views, the weekday letters stay put, and the rest starts or ends on
+    /// the month view's week, fading.
     private var pager: some View {
-        VStack(spacing: 0) {
-            weekHeader
-            AccessBanner()
-            ScrollView(.horizontal) {
-                LazyHStack(spacing: 0) {
-                    ForEach(0...(daysEachWay * 2), id: \.self) { index in
-                        let date = dayFor(index)
-                        let key = Dates.dayKey(date)
-                        DayPage(
-                            date: date,
-                            isCurrent: index == dayIndex,
-                            scroll: scroll,
-                            hourHeight: $hourHeight,
-                            scrollToNow: scrollToNow,
-                            selectedKey: selection?.day == key ? selection?.key : nil,
-                            actions: pageActions(dayKey: key))
-                            .containerRelativeFrame(.horizontal)
-                    }
+        let nav = model.time
+        let moved = nav.dayOffset
+        let transition = nav.transition
+        return VStack(spacing: 0) {
+            WeekdayLetters()
+                .padding(.bottom, 2)
+                // The strip is just below, where the letters end.
+                .reportsFrame(for: transition.flatMap { $0.isZoom ? nil : $0.id }) { frame in
+                    guard let transition else { return }
+                    nav.report(.day, CGRect(x: frame.minX, y: frame.maxY, width: frame.width, height: stripHeight),
+                               transition: transition.id)
                 }
-                .scrollTargetLayout()
+                .zIndex(1)
+            VStack(spacing: 0) {
+                weekHeader
+                AccessBanner()
+                days
             }
-            .scrollTargetBehavior(.paging)
-            .scrollPosition(id: $dayIndex)
-            .scrollIndicators(.hidden)
-            .scrollDisabled(gestureActive)
+            .background(Theme.background)
+            .offset(y: moved.y)
+            .opacity(moved.opacity)
         }
+    }
+
+    /// A page per day.
+    private var days: some View {
+        ScrollView(.horizontal) {
+            LazyHStack(spacing: 0) {
+                ForEach(0...(daysEachWay * 2), id: \.self) { index in
+                    let date = dayFor(index)
+                    let key = Dates.dayKey(date)
+                    DayPage(
+                        date: date,
+                        isCurrent: index == dayIndex,
+                        scroll: scroll,
+                        hourHeight: $hourHeight,
+                        scrollToNow: scrollToNow,
+                        selectedKey: selection?.day == key ? selection?.key : nil,
+                        actions: pageActions(dayKey: key))
+                        .containerRelativeFrame(.horizontal)
+                }
+            }
+            .scrollTargetLayout()
+        }
+        .scrollTargetBehavior(.paging)
+        .scrollPosition(id: $dayIndex)
+        .scrollIndicators(.hidden)
+        .scrollDisabled(gestureActive)
     }
 
     private func pageActions(dayKey: String) -> DayPageActions {
@@ -177,17 +182,9 @@ struct DayView: View {
         }
     }
 
+    /// The week strip, and the day's date.
     private var weekHeader: some View {
         VStack(spacing: 0) {
-            HStack(spacing: 0) {
-                ForEach(Array(Dates.weekdayLabels().enumerated()), id: \.offset) { _, label in
-                    Text(label)
-                        .font(.system(size: 11, weight: .medium))
-                        .foregroundStyle(Theme.secondaryText)
-                        .frame(maxWidth: .infinity)
-                }
-            }
-            .padding(.top, 4)
             ScrollView(.horizontal) {
                 LazyHStack(spacing: 0) {
                     ForEach(0..<weekCount, id: \.self) { index in
@@ -200,7 +197,7 @@ struct DayView: View {
             .scrollTargetBehavior(.paging)
             .scrollPosition(id: $weekIndex)
             .scrollIndicators(.hidden)
-            .frame(height: 42)
+            .frame(height: stripHeight)
             Text(Dates.formatFullDate(selected))
                 .font(.system(size: 15, weight: .medium))
                 .padding(.top, 4)
@@ -237,7 +234,9 @@ private struct WeekRow: View {
                 .accessibilityAddTraits(isSelected ? .isSelected : [])
             }
         }
-        .padding(.vertical, 4)
+        // So the numbers line up with the month view's, which the strip starts or ends on.
+        .padding(.top, 5)
+        .padding(.bottom, 3)
     }
 }
 #endif
