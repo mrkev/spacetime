@@ -202,6 +202,18 @@ struct TimelineGestureTests {
         #expect(pinch.hourHeight(scale: 0.1) == Timeline.minHourHeight)
     }
 
+#if os(iOS)
+    @Test func keepsTheMinuteUnderTheFingersWhilePinchingSideways() {
+        let pinch = SidewaysPinch(hourWidth: 120, offsetX: 1000, focalX: 300)
+        let width = pinch.hourWidth(scale: 0.5)
+        #expect(width == 60)
+        let minuteUnderFingers = (pinch.offsetX(hourWidth: width) + 300) / width * 60
+        #expect(abs(Double(minuteUnderFingers) - pinch.minute) < 0.001)
+        #expect(pinch.hourWidth(scale: 10) == ContinuousTimeline.maxHourWidth)
+        #expect(pinch.hourWidth(scale: 0.1) == ContinuousTimeline.minHourWidth)
+    }
+#endif
+
     @Test func keepsTheTimeAtTheTopWhenTheHoursChangeHeight() {
         // 9 AM at the top at 60 points an hour is still at the top at 30.
         let y = Timeline.padding + 9 * 60

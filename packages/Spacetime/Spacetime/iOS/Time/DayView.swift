@@ -176,10 +176,12 @@ struct DayView: View {
     /// page in step, so turning back shows the same day and time.
     private var continuousTimeline: some View {
         let topMinute = max(0, Double((scroll.y - Timeline.padding) / hourHeight * 60))
-        return ContinuousTimeline(day: selected, minute: topMinute, onPressReminder: { openReminder = $0 }) { day, minute in
+        let nav = model.time
+        return ContinuousTimeline(day: selected, minute: topMinute, hourWidth: nav.savedHourWidth,
+                                  onPressReminder: { openReminder = $0 }) { day, minute in
             if !Dates.isSameDay(day, selected) { select(day) }
             scroll.y = Timeline.padding + CGFloat(minute) / 60 * hourHeight
-        }
+        } onZoomEnded: { nav.saveHourWidth($0) }
     }
 
     /// The week strip, and the day's date.

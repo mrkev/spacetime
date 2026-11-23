@@ -63,6 +63,7 @@ struct MonthSplit {
 final class TimeNavigation {
     private static let levelKey = "spacetime.time.level"
     private static let zoomKey = "spacetime.time.hourHeight"
+    private static let sidewaysZoomKey = "spacetime.time.hourWidth"
     private static let animation = Animation.smooth(duration: 0.4)
 
     /// Reminders and Alarms, over the calendar.
@@ -116,6 +117,17 @@ final class TimeNavigation {
 
     func saveHourHeight(_ height: CGFloat) {
         storage.set(String(Double(height)), forKey: Self.zoomKey)
+    }
+
+    /// How wide an hour of the sideways day view was last zoomed to.
+    var savedHourWidth: CGFloat {
+        let saved = Double(storage.string(forKey: Self.sidewaysZoomKey) ?? "") ?? 0
+        return saved >= ContinuousTimeline.minHourWidth && saved <= ContinuousTimeline.maxHourWidth
+            ? CGFloat(saved) : ContinuousTimeline.defaultHourWidth
+    }
+
+    func saveHourWidth(_ width: CGFloat) {
+        storage.set(String(Double(width)), forKey: Self.sidewaysZoomKey)
     }
 
     /// Whether `level` is what's on screen, with nothing over it or changing.

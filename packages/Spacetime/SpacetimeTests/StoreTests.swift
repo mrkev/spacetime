@@ -153,4 +153,15 @@ struct SavedSettingsTests {
         storage.set("9000", forKey: "spacetime.time.hourHeight")
         #expect(TimeNavigation(storage: storage).savedHourHeight == Timeline.defaultHourHeight)
     }
+
+#if os(iOS)
+    @Test func remembersTheSidewaysDayViewsZoomWithinItsLimits() {
+        let nav = TimeNavigation(storage: storage)
+        #expect(nav.savedHourWidth == ContinuousTimeline.defaultHourWidth)
+        nav.saveHourWidth(200)
+        #expect(TimeNavigation(storage: storage).savedHourWidth == 200)
+        storage.set("9000", forKey: "spacetime.time.hourWidth")
+        #expect(TimeNavigation(storage: storage).savedHourWidth == ContinuousTimeline.defaultHourWidth)
+    }
+#endif
 }
