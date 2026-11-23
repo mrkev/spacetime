@@ -101,6 +101,9 @@ private struct DayStrip: View {
     private static let pointWidth: CGFloat = 140
     /// Short events are drawn at least this wide.
     private static let minEventWidth: CGFloat = 24
+    /// How tall a row of events is, with room for each one's title, times, and location. Rows are
+    /// only shorter when a day has more overlapping events than fit.
+    private static let rowHeight: CGFloat = 54
 
     private func x(_ minute: Double) -> CGFloat { CGFloat(minute) / 60 * Self.hourWidth }
 
@@ -147,11 +150,13 @@ private struct DayStrip: View {
         HStack(spacing: 2) {
             ForEach(events) { event in
                 Button { TimeActions.openEvent(event, calendar: calendar) } label: {
-                    Text(event.title)
-                        .font(.system(size: 12, weight: .semibold))
-                        .lineLimit(1)
-                        .padding(.horizontal, 6)
-                        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+                    StickyLabel {
+                        Text(event.title)
+                            .font(.system(size: 12, weight: .semibold))
+                            .lineLimit(1)
+                            .padding(.horizontal, 6)
+                    }
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
                         .background(Color(hex: event.color).opacity(0.22), in: .rect(cornerRadius: 4))
                         .contentShape(.rect)
                 }
@@ -170,16 +175,18 @@ private struct DayStrip: View {
     }
 
     private func timedArea(_ timed: [PositionedItem<TimelineEntry>], height: CGFloat) -> some View {
-        ZStack(alignment: .topLeading) {
+        // One height for all the day's rows, so every event shows the same lines.
+        let row = min(Self.rowHeight, height / CGFloat(timed.map(\.columns).max() ?? 1))
+        let lines = row >= Self.rowHeight ? 3 : row >= 40 ? 2 : 1
+        return ZStack(alignment: .topLeading) {
             Color.clear
             ForEach(timed) { entry in
-                let row = height / CGFloat(entry.columns)
                 let left = x(entry.range.startMinute)
                 let top = CGFloat(entry.column) * row
                 switch entry.item {
                 case .event(let event):
                     Button { TimeActions.openEvent(event, calendar: calendar) } label: {
-                        EventBar(event: event)
+                        EventBar(event: event, lines: lines)
                     }
                     .buttonStyle(.plain)
                     .frame(width: max(Self.minEventWidth, x(entry.range.endMinute) - left - 2), height: max(20, row - 2))
@@ -216,31 +223,65 @@ private struct DayStrip: View {
 
 private struct EventBar: View {
     let event: CalendarEvent
+    /// How many lines to show: the title, then the times, then the location.
+    let lines: Int
+
+    /// The times, with the day it ends on if that's another day.
+    private var times: String {
+        let end = Dates.isSameDay(event.start, event.end)
+            ? Dates.formatTime(event.end)
+            : "\(event.end.formatted(.dateTime.weekday(.abbreviated))) \(Dates.formatTime(event.end))"
+        return "\(Dates.formatTime(event.start)) – \(end)"
+    }
 
     var body: some View {
         let color = Color(hex: event.color)
-        VStack(alignment: .leading, spacing: 1) {
-            Text(event.title)
-                .font(.system(size: 13, weight: .semibold))
-            Text("\(Dates.formatTime(event.start)) – \(Dates.formatTime(event.end))")
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-            if let location = event.location, !location.isEmpty {
-                Text(location)
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
+        StickyLabel {
+            VStack(alignment: .leading, spacing: 1) {
+                Text(event.title)
+                    .font(.system(size: 13, weight: .semibold))
+                if lines >= 2 {
+                    Text(times)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
+                if lines >= 3, let location = event.location, !location.isEmpty {
+                    Text(location)
+                        .font(.system(size: 11))
+                        .foregroundStyle(.secondary)
+                }
             }
+            .lineLimit(1)
+            .padding(.leading, 7)
+            .padding(.trailing, 4)
+            .padding(.vertical, 4)
         }
-        .lineLimit(1)
-        .padding(.leading, 7)
-        .padding(.trailing, 4)
-        .padding(.vertical, 4)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
         .background(color.opacity(0.22))
         .overlay(alignment: .leading) { Rectangle().fill(color).frame(width: 3) }
         .clipShape(.rect(cornerRadius: 4))
         .contentShape(.rect)
         .accessibilityElement(children: .combine)
+    }
+}
+
+/// A bar's text, which stays at the left edge of the screen while the bar starts off it, until the
+/// bar's end pushes it off too.
+private struct StickyLabel<Content: View>: View {
+    @ViewBuilder let content: Content
+    @State private var width: CGFloat = 0
+
+    var body: some View {
+        let width = width
+        // Truncated in a short bar, which it fills, so it only moves in a bar longer than it is.
+        content
+            .onGeometryChange(for: CGFloat.self, of: { $0.size.width }) { self.width = $0 }
+            // In a frame as wide as the bar, so the effect knows where the bar is.
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .visualEffect { content, proxy in
+                let bar = proxy.frame(in: .scrollView(axis: .horizontal))
+                return content.offset(x: max(0, min(-bar.minX, bar.width - width)))
+            }
     }
 }
 
