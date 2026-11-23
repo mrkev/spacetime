@@ -5,8 +5,6 @@ Spacetime is an iOS app, in two versions:
 
 ## Native app (`packages/Spacetime`)
 
-> **To do on the Mac (pending since 2026-11-22):** the split into `Shared/`, `iOS/`, and `Mac/` below was made away from the Mac and has never been built. Before other work, build for the iPhone and the Mac, run the tests, fix what breaks (most likely missing imports in `Shared/`, now that it doesn't import SwiftUI), install it on the phone to check it, and then delete this note.
-
 SwiftUI, for iPhone (iOS 26.2 and up) and Mac (native macOS, 15.8 and up), with no third-party dependencies. The Xcode project uses folder-synchronized groups, so `.swift` files added under `Spacetime/` or `SpacetimeTests/` are built without editing the project. It builds in Swift 5 mode with main-actor default isolation; pure logic that tests or other threads use is marked `nonisolated`.
 
 The iPhone and the Mac share the app's logic but each has its own UI, so either can change without the other:
