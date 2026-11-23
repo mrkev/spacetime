@@ -25,6 +25,10 @@ struct ContinuousTimeline: View {
     @State private var labelWidth: CGFloat = 0
     @State private var hourWidth: CGFloat
     @State private var pinch: SidewaysPinch?
+    /// Where the scroll view is in the window, and how far in its visible area starts, past the
+    /// safe area, to find where the fingers are on the timeline.
+    @State private var scrollFrameMinX: CGFloat = 0
+    @State private var leadingInset: CGFloat = 0
 
     private var dayWidth: CGFloat { 24 * hourWidth }
 
@@ -43,6 +47,13 @@ struct ContinuousTimeline: View {
 
     private func day(_ index: Int) -> Date { Dates.addDays(anchor, index - Self.daysEachWay) }
 
+    /// The days on screen at a scroll of `offsetX` in a view `width` wide, and one either side.
+    private func drawnDays(width: CGFloat) -> ClosedRange<Int> {
+        let first = Int(floor(offsetX / dayWidth)) - 1
+        let last = Int(floor((offsetX + width) / dayWidth)) + 1
+        return max(0, first)...min(Self.daysEachWay * 2, max(first, last))
+    }
+
     /// Tells the day view the day and minute at the left edge, at `x`.
     private func reportScroll(_ x: CGFloat) {
         let index = Int(floor(x / dayWidth))
@@ -53,7 +64,9 @@ struct ContinuousTimeline: View {
     private func handlePinch(_ phase: GesturePhase) {
         switch phase.state {
         case .began:
-            pinch = SidewaysPinch(hourWidth: hourWidth, offsetX: offsetX, focalX: phase.localLocation.x)
+            // From the window, where both the fingers and the scroll view are measured.
+            pinch = SidewaysPinch(hourWidth: hourWidth, offsetX: offsetX,
+                                  focalX: phase.location.x - scrollFrameMinX - leadingInset)
         case .changed:
             guard let pinch else { return }
             let next = pinch.hourWidth(scale: phase.scale)
@@ -73,10 +86,15 @@ struct ContinuousTimeline: View {
     var body: some View {
         GeometryReader { geometry in
             ScrollView(.horizontal) {
-                LazyHStack(spacing: 0) {
-                    ForEach(0...(Self.daysEachWay * 2), id: \.self) { index in
+                // Placed by hand rather than in a lazy stack, which, as the days change width, keeps
+                // the first one showing where it was, undoing the scroll that keeps the minute under
+                // a pinch in place.
+                ZStack(alignment: .leading) {
+                    Color.clear.frame(width: CGFloat(Self.daysEachWay * 2 + 1) * dayWidth, height: geometry.size.height)
+                    ForEach(Array(drawnDays(width: geometry.size.width)), id: \.self) { index in
                         DayStrip(date: day(index), hourWidth: hourWidth, onPressReminder: onPressReminder)
                             .frame(width: dayWidth, height: geometry.size.height)
+                            .alignmentGuide(.leading) { _ in -CGFloat(index) * dayWidth }
                     }
                 }
             }
@@ -84,12 +102,16 @@ struct ContinuousTimeline: View {
             .scrollIndicators(.hidden)
             .scrollDisabled(pinch != nil)
             .gesture(PinchRecognizer(action: handlePinch))
+            .onScrollGeometryChange(for: CGFloat.self, of: { $0.contentInsets.leading }) { _, inset in
+                leadingInset = inset
+            }
             .onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.x + $0.contentInsets.leading }) { _, x in
                 // The first report can come before the starting position is applied.
                 guard x > 0, pinch == nil else { return }
                 offsetX = x
                 reportScroll(x)
             }
+            .onGeometryChange(for: CGFloat.self, of: { $0.frame(in: .global).minX }) { scrollFrameMinX = $0 }
             .overlay(alignment: .topLeading) { pinnedDayLabel }
         }
         .background(Theme.background)
