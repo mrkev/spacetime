@@ -1,5 +1,6 @@
 #if os(iOS)
 import MapKit
+import OSLog
 import SwiftUI
 import UIKit
 
@@ -221,26 +222,43 @@ struct SpaceMapView {
             return thumbnail
         }
 
-        // The annotation-view versions, since the Mac doesn't have the annotation ones.
-        func mapView(_ mapView: MKMapView, didSelect view: MKAnnotationView) {
-            guard let annotation = view.annotation else { return }
+        func mapView(_ mapView: MKMapView, didSelect annotation: MKAnnotation) {
             if let pin = (annotation as? PinAnnotation)?.pin {
                 parent.onSelectPin(pin)
-            } else {
-                if let feature = annotation as? MKMapFeatureAnnotation {
-                    parent.onPoi(.selected(name: feature.title ?? "", coordinate: Coordinate(feature.coordinate),
-                                           icon: feature.iconStyle?.image))
-                }
+            } else if annotation is MKMapFeatureAnnotation {
+                syncFeature(mapView)
             }
         }
 
-        func mapView(_ mapView: MKMapView, didDeselect view: MKAnnotationView) {
-            guard let annotation = view.annotation else { return }
+        func mapView(_ mapView: MKMapView, didDeselect annotation: MKAnnotation) {
             if let pin = (annotation as? PinAnnotation)?.pin {
                 parent.onDeselectPin(pin)
-            } else {
-                if let feature = annotation as? MKMapFeatureAnnotation {
-                    parent.onPoi(.deselected(coordinate: Coordinate(feature.coordinate)))
+            } else if annotation is MKMapFeatureAnnotation {
+                syncFeature(mapView)
+            }
+        }
+
+        /// The point of interest last reported as selected.
+        private var reportedFeature: MKMapFeatureAnnotation?
+
+        /// Reports the point of interest the map has selected, once it's done selecting. Going by the
+        /// map rather than by each callback, since MapKit can deselect a point of interest after
+        /// selecting another (or a new copy of the same one), which left the map with one selected
+        /// and its card gone.
+        private func syncFeature(_ mapView: MKMapView) {
+            DispatchQueue.main.async { [weak self, weak mapView] in
+                guard let self, let mapView else { return }
+                let feature = mapView.selectedAnnotations.lazy.compactMap { $0 as? MKMapFeatureAnnotation }.first
+                guard feature !== reportedFeature else { return }
+                let previous = reportedFeature
+                reportedFeature = feature
+                if let feature {
+                    Log.places.debug("Selected point of interest \(feature.title ?? "", privacy: .private)")
+                    parent.onPoi(.selected(name: feature.title ?? "", coordinate: Coordinate(feature.coordinate),
+                                           icon: feature.iconStyle?.image))
+                } else if let previous {
+                    Log.places.debug("Deselected point of interest \(previous.title ?? "", privacy: .private)")
+                    parent.onPoi(.deselected(coordinate: Coordinate(previous.coordinate)))
                 }
             }
         }
