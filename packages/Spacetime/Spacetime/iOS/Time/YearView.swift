@@ -50,8 +50,7 @@ struct YearView: View {
             .background(Theme.background)
             .onChange(of: model.todayRequests) {
                 guard nav.isShowing(.year) else { return }
-                // Through the proxy, which scrolls even when `position` is already 0: the tab bar scrolls
-                // to the top when Time is tapped again, without changing `position` until it's done.
+                // Through the proxy, which scrolls even when `position` is already 0.
                 withAnimation { proxy.scrollTo(0, anchor: .top) }
             }
         }

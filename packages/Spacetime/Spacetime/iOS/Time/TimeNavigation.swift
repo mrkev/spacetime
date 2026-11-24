@@ -293,7 +293,7 @@ private struct TimeLevels: View {
                 ToolbarItem(placement: .topBarLeading) { backButton }
             }
             ToolbarItem(placement: .principal) { Text("") }
-            TimeToolbar(showsReminders: nav.barLevel != .day, day: nav.barLevel == .day ? nav.day : nil) {
+            TimeToolbar(day: nav.barLevel == .day ? nav.day : nil) {
                 newReminder = NewReminderRequest(date: $0)
             }
         }
@@ -331,28 +331,36 @@ private struct TimeLevels: View {
     }
 }
 
-/// The toolbar buttons the calendar's levels share: Reminders, Alarms (where there are any), and the
-/// "+" menu.
+/// The toolbar buttons the calendar's levels share. At the top, Alarms (where there are any) and
+/// Settings; at the bottom, within reach, the switch to the map, Today, Reminders, and the "+" menu.
 struct TimeToolbar: ToolbarContent {
-    var showsReminders = true
     var day: Date?
     var onNewReminder: (Date?) -> Void
     @Environment(AppModel.self) private var model
 
     var body: some ToolbarContent {
         ToolbarItemGroup(placement: .primaryAction) {
-            if showsReminders {
-                Button("Reminders", systemImage: "checklist") {
-                    model.time.path.append(.reminders)
+            if AlarmStore.isSupported {
+                Button("Alarms", systemImage: "alarm") {
+                    model.time.path.append(.alarms)
                 }
-                if AlarmStore.isSupported {
-                    Button("Alarms", systemImage: "alarm") {
-                        model.time.path.append(.alarms)
-                    }
-                }
-                Button("Settings", systemImage: "gearshape") {
-                    model.showsSettings = true
-                }
+            }
+            Button("Settings", systemImage: "gearshape") {
+                model.showsSettings = true
+            }
+        }
+        ToolbarItem(placement: .bottomBar) {
+            Button("Space", systemImage: "map") { model.switchTab() }
+                .accessibilityHint("Shows the map")
+        }
+        ToolbarSpacer(.flexible, placement: .bottomBar)
+        ToolbarItem(placement: .bottomBar) {
+            Button("Today") { model.goToToday() }
+        }
+        ToolbarSpacer(.fixed, placement: .bottomBar)
+        ToolbarItemGroup(placement: .bottomBar) {
+            Button("Reminders", systemImage: "checklist") {
+                model.time.path.append(.reminders)
             }
             AddMenu(day: day, onNewReminder: onNewReminder) {
                 model.time.alarmEditor = AlarmEditRequest(day: $0)

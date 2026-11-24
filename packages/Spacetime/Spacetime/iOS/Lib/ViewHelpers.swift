@@ -10,7 +10,7 @@ extension View {
 
     /// Keeps the scroll view this is inside from scrolling to its top when the status bar is tapped,
     /// for a list that starts years back, whose top isn't somewhere to go. Apply it to the scroll
-    /// view's content. (Tapping the selected tab scrolls to the top anyway; see `RootView.reselect`.)
+    /// view's content.
     func noScrollToTop() -> some View {
         background(NoScrollToTop())
     }

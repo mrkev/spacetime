@@ -1,43 +1,23 @@
 #if os(iOS)
 import SwiftUI
 
+/// The map and the calendar, one over the other. Both stay alive once shown, as tabs would, so the
+/// map isn't rebuilt and the calendar keeps its place; each has its own button to switch to the other,
+/// in place of a tab bar.
 struct RootView: View {
     @Environment(AppModel.self) private var model
     @Environment(\.scenePhase) private var scenePhase
-    /// The tab bar's selection. The "now" button selects its tab for a moment; it's then switched back,
-    /// which a binding that refused the change wouldn't do: the tab bar would stay on that empty tab.
-    @State private var selection = AppTab.space
+    /// Whether the calendar has been shown yet. It isn't built until it is.
+    @State private var timeBuilt = false
 
     var body: some View {
-        TabView(selection: Binding(get: { selection }, set: { next in
-            if next == selection { reselect(next) }
-            selection = next
-        })) {
-            Tab("Space", systemImage: "map", value: AppTab.space) {
+        ZStack {
+            surface(.space) {
                 SpaceView(region: model.space.savedMapRegion())
             }
-            Tab("Time", systemImage: "calendar", value: AppTab.time) {
-                TimeTab()
-            }
-            // Not really a tab: picking it runs its action (see `tab` above). On the iPhone, the search
-            // role sets it apart at the end of the tab bar.
-            Tab(value: AppTab.now, role: nowTabRole) {
-                Color.clear
-            } label: {
-                if model.tab == .time {
-                    Label("Today", systemImage: "calendar.badge.clock")
-                } else {
-                    Label("Here", systemImage: "location.fill")
-                }
-            }
-        }
-        .onChange(of: selection) { previous, next in
-            if next == .now {
-                model.runNowAction()
-                selection = previous
-            } else if previous != .now {
-                if next == .time { model.time.openFirstTime() }
-                model.tab = next
+            if timeBuilt || model.tab == .time {
+                surface(.time) { TimeTab() }
+                    .onAppear { timeBuilt = true }
             }
         }
         .onChange(of: scenePhase) { _, phase in
@@ -55,15 +35,14 @@ struct RootView: View {
         .task { await LegacyReminderMigration.run(space: model.space, calendar: model.calendar) }
     }
 
-    /// The selected tab tapped again, after the tab bar has popped to its first screen. The tab bar
-    /// then scrolls that screen to the top, which for the year view is ten years back, so the Time
-    /// tab scrolls on to this year instead, as Today does.
-    private func reselect(_ tab: AppTab) {
-        if tab == .time && model.time.path.isEmpty { model.runNowAction() }
-    }
-
-    private var nowTabRole: TabRole? {
-        .search
+    /// `content`, shown while `tab` is selected, and otherwise kept but hidden.
+    private func surface(_ tab: AppTab, @ViewBuilder content: () -> some View) -> some View {
+        let shown = model.tab == tab
+        return content()
+            .opacity(shown ? 1 : 0)
+            .allowsHitTesting(shown)
+            .accessibilityHidden(!shown)
+            .zIndex(shown ? 1 : 0)
     }
 }
 #endif

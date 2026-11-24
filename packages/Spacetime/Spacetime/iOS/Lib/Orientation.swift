@@ -33,10 +33,11 @@ extension View {
             .onDisappear { Orientation.allowLandscape(false) }
     }
 
-    /// Hides the navigation and tab bars, for a screen that takes up all of a sideways phone.
+    /// Hides the navigation bar and the bottom toolbar, for a screen that takes up all of a sideways
+    /// phone.
     @ViewBuilder
     func barsHidden(_ hidden: Bool) -> some View {
-        toolbar(hidden ? .hidden : .automatic, for: .navigationBar, .tabBar)
+        toolbar(hidden ? .hidden : .automatic, for: .navigationBar, .bottomBar)
     }
 }
 #endif

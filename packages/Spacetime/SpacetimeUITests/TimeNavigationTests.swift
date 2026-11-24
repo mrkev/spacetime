@@ -1,6 +1,6 @@
 import XCTest
 
-/// Going back and forth between the Time tab's screens. Screens pushed after going back used to crash
+/// Going back and forth between the calendar's screens. Screens pushed after going back used to crash
 /// when UIKit asked their toolbars for accessibility labels (see `TimeTab`), which UI tests and
 /// VoiceOver both do.
 final class TimeNavigationTests: XCTestCase {
@@ -8,8 +8,12 @@ final class TimeNavigationTests: XCTestCase {
         continueAfterFailure = false
     }
 
+    /// Taps the back button: the navigation bar's leftmost, since Alarms and Settings are in it too.
     private func back(_ app: XCUIApplication) {
-        app.navigationBars.buttons.element(boundBy: 0).tap()
+        let buttons = app.navigationBars.buttons.allElementsBoundByIndex.filter { $0.isHittable }
+        buttons.min { $0.frame.minX < $1.frame.minX }?.tap()
+        // The calendar doesn't take taps while it changes levels.
+        sleep(1)
     }
 
     @MainActor

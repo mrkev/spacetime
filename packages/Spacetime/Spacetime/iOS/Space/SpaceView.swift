@@ -358,9 +358,39 @@ struct SpaceView: View {
                     .padding(.vertical, 8)
                     .glass(in: .capsule)
             }
-            searchBar.padding(.horizontal, 20)
+            bottomBar.padding(.horizontal, 20)
         }
         .padding(.bottom, 8)
+    }
+
+    /// The search field, between the switch to the calendar and Here. Both step aside while typing.
+    private var bottomBar: some View {
+        HStack(spacing: 8) {
+            if !searchFocused {
+                roundButton("Time", systemImage: "calendar") { model.switchTab() }
+                    .accessibilityHint("Shows the calendar")
+                    .transition(.move(edge: .leading).combined(with: .opacity))
+            }
+            searchBar
+            if !searchFocused {
+                roundButton("Here", systemImage: "location.fill") { model.goHere() }
+                    .transition(.move(edge: .trailing).combined(with: .opacity))
+            }
+        }
+        .animation(.smooth(duration: 0.25), value: searchFocused)
+    }
+
+    /// A round glass button as tall as the search field.
+    private func roundButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemImage)
+                .font(.system(size: 18, weight: .medium))
+                .frame(width: 46, height: 46)
+                .contentShape(.circle)
+        }
+        .buttonStyle(.plain)
+        .glass(in: .circle, interactive: true)
+        .accessibilityLabel(title)
     }
 
     /// Search results' cards, side by side, with the ones on either side peeking in. Swiping to one selects its pin.

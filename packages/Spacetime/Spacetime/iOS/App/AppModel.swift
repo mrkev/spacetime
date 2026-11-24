@@ -1,11 +1,10 @@
 #if os(iOS)
 import SwiftUI
 
+/// The app's two surfaces, the map and the calendar. One shows at a time, and each has a button
+/// that switches to the other.
 enum AppTab: Hashable {
     case space, time
-    /// The floating button at the trailing end of the tab bar ("Here" on Space, "Today" on Time). It
-    /// never stays selected; pressing it runs the current tab's action.
-    case now
 }
 
 /// The app's shared state.
@@ -21,7 +20,7 @@ final class AppModel {
 
     var tab: AppTab = .space
     var showsSettings = false
-    /// Bumped by the floating button on each tab, for the screen showing to act on.
+    /// Bumped by the Here and Today buttons, for the screen showing to act on.
     private(set) var hereRequests = 0
     private(set) var todayRequests = 0
 
@@ -35,12 +34,17 @@ final class AppModel {
         time = TimeNavigation(storage: storage)
     }
 
-    func runNowAction() {
-        switch tab {
-        case .space: hereRequests += 1
-        case .time: todayRequests += 1
-        case .now: break
-        }
+    /// Switches to the other surface. The calendar opens where it was left the first time it shows.
+    func switchTab() {
+        let next: AppTab = tab == .space ? .time : .space
+        if next == .time { time.openFirstTime() }
+        withAnimation(.smooth(duration: 0.25)) { tab = next }
     }
+
+    /// Centers the map on where you are.
+    func goHere() { hereRequests += 1 }
+
+    /// Scrolls the calendar to today.
+    func goToToday() { todayRequests += 1 }
 }
 #endif
