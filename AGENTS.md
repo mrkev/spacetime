@@ -165,7 +165,7 @@ Look at the screenshots with your file-reading tool, which shows images. Things 
 ## Working alongside other agents
 
 - Other agents often work in this checkout at the same time, so the working tree may hold changes that aren't yours. Never revert, stash, `git checkout`, or `git restore` files you didn't change, and stage your own files by path rather than with `git add -A` or `git commit -a`.
-- Commit (to `main`) only when the user says "commit", and push only when they say "commit and push".
+- Commit to `main` and push when a task is done (built, and tested where the app has tests), without being asked. No branches or pull requests.
 
 ## Gotchas
 
