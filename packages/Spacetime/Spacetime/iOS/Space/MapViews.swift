@@ -8,6 +8,10 @@ struct MapPin: Hashable {
     enum Kind: Hashable {
         case place
         case result(Int)
+        /// Photos taken around a spot (see `MapLayers`).
+        case photos
+        /// A contact's address.
+        case contact
     }
 
     var id: String
@@ -16,6 +20,10 @@ struct MapPin: Hashable {
     var color: String
     var glyph: String?
     var name: String
+    /// How many photos a photos pin stands for.
+    var count = 1
+    /// The photo (an asset ID) or contact (a contact ID) whose picture a photos or contact pin shows.
+    var imageId: String?
 }
 
 /// A todo's geofence.
@@ -114,6 +122,10 @@ struct SpaceMapView {
     var onLongPress: (Coordinate) -> Void
     var onRegionChange: (SearchRegion) -> Void
     var onTap: () -> Void
+    /// Pictures for photo and contact pins.
+    var thumbnails: MapThumbnails?
+    /// A photo or contact pin, or a cluster of them, was tapped.
+    var onSelectThumbnails: ([MapPin]) -> Void = { _ in }
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -121,6 +133,8 @@ struct SpaceMapView {
         let map = MKMapView()
         map.delegate = coordinator
         map.showsCompass = false
+        map.register(ThumbnailAnnotationView.self,
+                     forAnnotationViewWithReuseIdentifier: ThumbnailAnnotationView.reuseIdentifier)
         // The Mac's MKMapView can't select points of interest.
         map.selectableMapFeatures = [.pointsOfInterest]
         map.register(MKMarkerAnnotationView.self, forAnnotationViewWithReuseIdentifier: "pin")
@@ -163,6 +177,9 @@ struct SpaceMapView {
         init(_ parent: SpaceMapView) { self.parent = parent }
 
         func mapView(_ mapView: MKMapView, viewFor annotation: MKAnnotation) -> MKAnnotationView? {
+            if let pins = thumbnailPins(annotation) {
+                return thumbnailView(mapView, annotation, pins)
+            }
             guard let annotation = annotation as? PinAnnotation else { return nil }
             let view = mapView.dequeueReusableAnnotationView(withIdentifier: "pin", for: annotation)
             guard let marker = view as? MKMarkerAnnotationView else { return view }
@@ -178,6 +195,30 @@ struct SpaceMapView {
         func mapView(_ mapView: MKMapView, rendererFor overlay: MKOverlay) -> MKOverlayRenderer {
             if let fence = (overlay as? FenceOverlay)?.fence { return circleRenderer(overlay, color: fence.color) }
             return MKOverlayRenderer(overlay: overlay)
+        }
+
+        /// The photo or contact pins an annotation stands for: its own, or a cluster's.
+        private func thumbnailPins(_ annotation: MKAnnotation) -> [MapPin]? {
+            let members = (annotation as? MKClusterAnnotation)?.memberAnnotations ?? [annotation]
+            let pins = members.compactMap { ($0 as? PinAnnotation)?.pin }
+            guard !pins.isEmpty, pins.count == members.count,
+                  pins.allSatisfy({ $0.kind == .photos || $0.kind == .contact }) else { return nil }
+            // A cluster shows the photo of its most photographed spot, or its first contact by name.
+            return pins.sorted { ($1.count, $0.name, $0.id) < ($0.count, $1.name, $1.id) }
+        }
+
+        private func thumbnailView(_ mapView: MKMapView, _ annotation: MKAnnotation,
+                                   _ pins: [MapPin]) -> MKAnnotationView {
+            let view = mapView.dequeueReusableAnnotationView(withIdentifier: ThumbnailAnnotationView.reuseIdentifier,
+                                                             for: annotation)
+            guard let thumbnail = view as? ThumbnailAnnotationView else { return view }
+            thumbnail.configure(pins, thumbnails: parent.thumbnails)
+            thumbnail.onSelect = { [weak self, weak mapView] pins in
+                // Deselected right away, so it can be tapped again.
+                DispatchQueue.main.async { mapView?.deselectAnnotation(annotation, animated: false) }
+                self?.parent.onSelectThumbnails(pins)
+            }
+            return thumbnail
         }
 
         // The annotation-view versions, since the Mac doesn't have the annotation ones.

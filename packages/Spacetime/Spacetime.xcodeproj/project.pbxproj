@@ -406,9 +406,11 @@
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Spacetime;
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Spacetime shows your calendar events in the Time tab.";
+				INFOPLIST_KEY_NSContactsUsageDescription = "Spacetime shows your contacts’ addresses on the map.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Spacetime shows your sleep, periods, and medications on your calendar.";
 				INFOPLIST_KEY_NSLocationUsageDescription = "Spacetime shows where you are on the map.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Spacetime shows where you are on the map.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Spacetime shows where your photos were taken on the map.";
 				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Spacetime shows your reminders alongside your calendar.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;
@@ -463,9 +465,11 @@
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Spacetime;
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Spacetime shows your calendar events in the Time tab.";
+				INFOPLIST_KEY_NSContactsUsageDescription = "Spacetime shows your contacts’ addresses on the map.";
 				INFOPLIST_KEY_NSHealthShareUsageDescription = "Spacetime shows your sleep, periods, and medications on your calendar.";
 				INFOPLIST_KEY_NSLocationUsageDescription = "Spacetime shows where you are on the map.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Spacetime shows where you are on the map.";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "Spacetime shows where your photos were taken on the map.";
 				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Spacetime shows your reminders alongside your calendar.";
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphoneos*]" = YES;
 				"INFOPLIST_KEY_UIApplicationSceneManifest_Generation[sdk=iphonesimulator*]" = YES;

@@ -16,6 +16,7 @@ final class AppModel {
     let location = LocationModel()
     let alarms = AlarmStore.shared
     let health: HealthStore
+    let layers: MapLayers
     let time: TimeNavigation
 
     var tab: AppTab = .space
@@ -29,6 +30,8 @@ final class AppModel {
         space = SpaceStore(storage: storage)
         calendar = CalendarStore(meta: ReminderMetaStore(storage: storage))
         health = HealthStore(storage: storage)
+        layers = MapLayers(storage: storage)
+        layers.load()
         time = TimeNavigation(storage: storage)
     }
 

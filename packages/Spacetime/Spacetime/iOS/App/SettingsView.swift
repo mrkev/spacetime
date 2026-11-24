@@ -1,15 +1,36 @@
 #if os(iOS)
+import Photos
+import PhotosUI
 import SwiftUI
 
-/// The app's settings: for now, what the calendar shows from Health.
+/// The app's settings: what the map shows besides places, and what the calendar shows from Health.
 struct SettingsView: View {
     @Environment(HealthStore.self) private var health
+    @Environment(MapLayers.self) private var layers
     @Environment(\.dismiss) private var dismiss
     /// Kinds being turned on, while Health asks for access.
     @State private var pending = Set<HealthKind>()
 
     var body: some View {
         Form {
+            Section {
+                MapLayerToggle(layer: .photos)
+                if layers.isEnabled(.photos) && PHPhotoLibrary.authorizationStatus(for: .readWrite) == .limited {
+                    Button("Choose Photos…") {
+                        if let top = Presenter.topViewController {
+                            PHPhotoLibrary.shared().presentLimitedLibraryPicker(from: top)
+                        }
+                    }
+                }
+                MapLayerToggle(layer: .contacts)
+            } header: {
+                Text("Map")
+            } footer: {
+                Text("""
+                    Shows where your photos were taken, and your contacts’ addresses, on the Space map. \
+                    Addresses are looked up with Apple Maps, a few at a time.
+                    """)
+            }
             Section {
                 if HealthStore.isAvailable {
                     healthToggle(.sleep, icon: "bed.double.fill", color: Theme.sleep)

@@ -10,6 +10,7 @@ extension View {
             .environment(model.location)
             .environment(model.alarms)
             .environment(model.health)
+            .environment(model.layers)
     }
 }
 

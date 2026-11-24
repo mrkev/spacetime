@@ -25,6 +25,7 @@ struct SpaceView: View {
     @Environment(SpaceStore.self) private var space
     @Environment(CalendarStore.self) private var calendar
     @Environment(LocationModel.self) private var location
+    @Environment(MapLayers.self) private var layers
 
     @State private var controller = MapController()
     @State private var filter = allFilter
@@ -47,6 +48,8 @@ struct SpaceView: View {
     @State private var newPlace: NewPlaceRequest?
     @State private var showingCollections = false
     @State private var showingFilters = false
+    @State private var thumbnails = MapThumbnails()
+    @State private var photos: PhotosRequest?
     /// Edit Collections was chosen in the filters' popover; the sheet opens once it's gone.
     @State private var editCollectionsAfterFilters = false
     @FocusState private var searchFocused: Bool
@@ -74,7 +77,7 @@ struct SpaceView: View {
                 } + results.enumerated().map { i, found in
                     MapPin(id: "result:\(i)", kind: .result(i), coordinate: found.coordinate, color: Hex.blue,
                            glyph: nil, name: found.name)
-                },
+                } + layerPins,
                 fences: fenced.flatMap(\.todos).map {
                     MapFence(id: $0.id, coordinate: $0.coordinate, radius: $0.radius, color: space.reminderColor)
                 },
@@ -85,6 +88,7 @@ struct SpaceView: View {
                     switch pin.kind {
                     case .place: selectedPlaceId = pin.id
                     case .result(let i): withAnimation { selectedResult = i }
+                    case .photos, .contact: break
                     }
                 },
                 onDeselectPin: { pin in
@@ -96,7 +100,9 @@ struct SpaceView: View {
                     visibleRegion = region
                     space.saveMapRegion(region)
                 },
-                onTap: { searchFocused = false })
+                onTap: { searchFocused = false },
+                thumbnails: thumbnails,
+                onSelectThumbnails: openThumbnails)
                 .ignoresSafeArea()
 
             VStack(spacing: 0) {
@@ -124,6 +130,49 @@ struct SpaceView: View {
         }
         .sheet(isPresented: $showingCollections) {
             CollectionsView()
+        }
+        .sheet(item: $photos) { request in
+            PhotosSheet(request: request)
+        }
+        .onAppear { thumbnails.contactData = { [layers] in layers.contactThumbnails[$0] } }
+    }
+
+    // MARK: Photos and contacts
+
+    /// Photos and contacts, under places: they're drawn smaller and give way to places' pins.
+    private var layerPins: [MapPin] {
+        layers.photoGroups.map { group in
+            MapPin(id: group.id, kind: .photos, coordinate: group.coordinate, color: Hex.blue, glyph: nil,
+                   name: group.photoIds.count == 1 ? "1 photo" : "\(group.photoIds.count) photos",
+                   count: group.photoIds.count, imageId: group.photoIds.first)
+        } + layers.contactAddresses.compactMap { address in
+            address.coordinate.map {
+                MapPin(id: address.id, kind: .contact, coordinate: $0, color: Hex.blue, glyph: nil, name: address.name,
+                       imageId: address.contactId)
+            }
+        }
+    }
+
+    /// Opens photos in a sheet, and a contact's card; contacts spread apart are zoomed in on, and
+    /// several at one address picked from.
+    private func openThumbnails(_ pins: [MapPin]) {
+        guard let first = pins.first else { return }
+        if first.kind == .photos {
+            let ids = Set(pins.map(\.id))
+            let groups = layers.photoGroups.filter { ids.contains($0.id) }
+            guard !groups.isEmpty else { return }
+            let latitude = groups.map(\.coordinate.latitude).reduce(0, +) / Double(groups.count)
+            let longitude = groups.map(\.coordinate.longitude).reduce(0, +) / Double(groups.count)
+            photos = PhotosRequest(photoIds: groups.flatMap(\.photoIds),
+                                   coordinate: Coordinate(latitude: latitude, longitude: longitude))
+            return
+        }
+        if pins.count == 1, let contactId = first.imageId {
+            ContactCards.open(contactId)
+        } else if pins.allSatisfy({ Geo.distanceMeters($0.coordinate, first.coordinate) < 50 }) {
+            Task { await ContactCards.choose(pins) }
+        } else {
+            controller.focus(on: pins.map(\.coordinate), padding: focusPadding)
         }
     }
 
@@ -278,6 +327,7 @@ struct SpaceView: View {
                     editCollectionsAfterFilters = true
                     showingFilters = false
                 }
+                .environment(layers)
                 .presentationCompactAdaptation(.popover)
                 .onDisappear {
                     guard editCollectionsAfterFilters else { return }
@@ -519,6 +569,13 @@ private struct FilterList: View {
                     .contentShape(.rect)
                 }
                 .buttonStyle(.plain)
+                Divider().padding(.vertical, 4)
+                ForEach(MapLayer.allCases, id: \.self) { layer in
+                    MapLayerToggle(layer: layer)
+                        .font(.system(size: 16))
+                        .padding(.horizontal, 16)
+                        .frame(minHeight: 44)
+                }
             }
             .padding(.vertical, 6)
         }
