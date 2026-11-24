@@ -17,6 +17,8 @@ struct PhotoViewer: View {
     /// Full-size images of the photo showing and the ones on either side, decoded ahead of time so
     /// swiping to one shows it right away.
     @State private var images: [String: UIImage] = [:]
+    /// Whether the photo showing is zoomed in, which holds the pager still so a drag pans it.
+    @State private var zoomed = false
 
     init(assets: [PHAsset], startId: String, placeName: String?) {
         self.assets = assets
@@ -31,7 +33,8 @@ struct PhotoViewer: View {
                 LazyHStack(spacing: 0) {
                     ForEach(assets, id: \.localIdentifier) { asset in
                         PhotoPage(asset: asset, size: geometry.size, image: images[asset.localIdentifier],
-                                  showsInfo: $showsInfo, isCurrent: asset.localIdentifier == currentId)
+                                  showsInfo: $showsInfo, zoomed: $zoomed,
+                                  isCurrent: asset.localIdentifier == currentId)
                             .frame(width: geometry.size.width, height: geometry.size.height)
                     }
                 }
@@ -40,6 +43,7 @@ struct PhotoViewer: View {
             .scrollTargetBehavior(.paging)
             .scrollPosition(id: $currentId)
             .scrollIndicators(.hidden)
+            .scrollDisabled(zoomed)
             .task(id: currentId) { await preload(side: max(geometry.size.width, geometry.size.height)) }
         }
         .ignoresSafeArea()
@@ -77,17 +81,23 @@ struct PhotoViewer: View {
 
 /// One photo, centered, with its details below the screen. Swiping up brings the details up, and once
 /// they reach the photo they push it up too, stopping with the details in view; swiping down puts it
-/// back.
+/// back. Pinch or double-tap the photo to zoom in, and drag to look around it.
 private struct PhotoPage: View {
     let asset: PHAsset
     let size: CGSize
     /// Loaded by the viewer, ahead of time.
     let image: UIImage?
     @Binding var showsInfo: Bool
+    @Binding var zoomed: Bool
     let isCurrent: Bool
     @State private var position = ScrollPosition(y: 0)
     @State private var scrollY: CGFloat = 0
     @State private var info: PhotoInfo?
+    @State private var zoom = PhotoZoom()
+    /// The zoom as a pinch or drag began.
+    @State private var gestureStart: PhotoZoom?
+    /// The photo at full size, loaded once it's zoomed in far enough to need it.
+    @State private var fullImage: UIImage?
 
     private static let gap: CGFloat = 20
 
@@ -99,6 +109,18 @@ private struct PhotoPage: View {
 
     /// Where the details stop: their top a quarter of the way down the screen.
     private var infoOffset: CGFloat { size.height * 0.75 }
+
+    /// How big the photo is drawn, before zooming.
+    private var photoSize: CGSize {
+        guard asset.pixelWidth > 0, asset.pixelHeight > 0 else { return size }
+        let aspect = CGFloat(asset.pixelWidth) / CGFloat(asset.pixelHeight)
+        return CGSize(width: min(size.width, photoHeight * aspect), height: photoHeight)
+    }
+
+    /// A point on the page, relative to its center, where the photo's center is while it can zoom.
+    private func fromCenter(_ point: CGPoint) -> CGPoint {
+        CGPoint(x: point.x - size.width / 2, y: point.y - size.height / 2)
+    }
 
     /// Where the photo's bottom is: centered, until the details push it up.
     private var photoBottom: CGFloat {
@@ -121,6 +143,29 @@ private struct PhotoPage: View {
         .scrollPosition($position)
         .scrollTargetBehavior(InfoSnap(infoOffset: infoOffset))
         .scrollIndicators(.hidden)
+        .scrollDisabled(zoom.isZoomed)
+        // Zooming is for the photo on its own, not with the details up.
+        .simultaneousGesture(pinch, isEnabled: !showsInfo)
+        .simultaneousGesture(pan, isEnabled: zoom.isZoomed)
+        .onTapGesture(count: 2) { location in
+            guard !showsInfo else { return }
+            withAnimation(.spring(duration: 0.35)) {
+                zoom = zoom.isZoomed ? PhotoZoom()
+                    : PhotoZoom().magnified(by: 2.5, around: fromCenter(location))
+                        .settled(content: photoSize, viewport: size)
+            }
+        }
+        .onChange(of: zoom.isZoomed) { _, isZoomed in
+            if isCurrent { zoomed = isZoomed }
+        }
+        .onChange(of: zoom.scale > 1.5) { _, needsMore in
+            guard needsMore, fullImage == nil else { return }
+            Task {
+                let side = CGFloat(max(asset.pixelWidth, asset.pixelHeight)) / UITraitCollection.current.displayScale
+                let full = await PhotoImages.image(asset, side: side, fill: false)
+                fullImage = await full?.byPreparingForDisplay() ?? full
+            }
+        }
         .onScrollGeometryChange(for: CGFloat.self, of: { $0.contentOffset.y + $0.contentInsets.top }) { _, y in
             scrollY = y
             let shown = y > infoOffset / 2
@@ -129,12 +174,18 @@ private struct PhotoPage: View {
         .background(alignment: .top) {
             photo
                 .frame(width: size.width, height: photoHeight)
+                .scaleEffect(zoom.scale)
+                .offset(zoom.offset)
                 .offset(y: photoBottom - photoHeight)
         }
         .onAppear { position = ScrollPosition(y: showsInfo ? infoOffset : 0) }
         .onChange(of: isCurrent) { _, current in
-            // A photo swiped to opens the way the last one was.
+            // A photo swiped to opens the way the last one was; one swiped away is zoomed back out.
             if current { position = ScrollPosition(y: showsInfo ? infoOffset : 0) }
+            if !current {
+                zoom = PhotoZoom()
+                fullImage = nil
+            }
         }
         .task(id: isCurrent && showsInfo) {
             guard isCurrent, showsInfo, info == nil else { return }
@@ -142,9 +193,37 @@ private struct PhotoPage: View {
         }
     }
 
+    private var pinch: some Gesture {
+        MagnifyGesture()
+            .onChanged { value in
+                let start = gestureStart ?? zoom
+                gestureStart = start
+                zoom = start.magnified(by: value.magnification, around: fromCenter(value.startLocation))
+            }
+            .onEnded { _ in
+                gestureStart = nil
+                withAnimation(.spring(duration: 0.35)) { zoom = zoom.settled(content: photoSize, viewport: size) }
+            }
+    }
+
+    private var pan: some Gesture {
+        DragGesture()
+            .onChanged { value in
+                let start = gestureStart ?? zoom
+                gestureStart = start
+                zoom = start.panned(by: value.translation)
+            }
+            .onEnded { value in
+                gestureStart = nil
+                // Carries on a little in the direction it was flung, then stays within the photo.
+                let flung = zoom.panned(by: CGSize(width: value.velocity.width * 0.1, height: value.velocity.height * 0.1))
+                withAnimation(.spring(duration: 0.45)) { zoom = flung.settled(content: photoSize, viewport: size) }
+            }
+    }
+
     private var photo: some View {
         ZStack {
-            if let image {
+            if let image = fullImage ?? image {
                 Image(uiImage: image).resizable().scaledToFit()
             } else {
                 ProgressView().tint(.white)
@@ -161,6 +240,42 @@ private struct PhotoPage: View {
         }
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(asset.mediaType == .video ? "Video" : "Photo")
+    }
+}
+
+/// How far a photo is zoomed in, and panned from its center.
+struct PhotoZoom: Equatable {
+    static let maxScale: CGFloat = 5
+
+    var scale: CGFloat = 1
+    var offset: CGSize = .zero
+
+    var isZoomed: Bool { scale > 1.01 }
+
+    /// Zoomed by `factor`, keeping the point of the photo under `focus` (relative to the photo's
+    /// center) where it is. It can go a little past the limits while pinching; `settled` brings it back.
+    func magnified(by factor: CGFloat, around focus: CGPoint) -> PhotoZoom {
+        let next = min(max(scale * factor, 0.6), PhotoZoom.maxScale * 1.3)
+        let ratio = next / scale
+        return PhotoZoom(scale: next, offset: CGSize(width: focus.x - ratio * (focus.x - offset.width),
+                                                     height: focus.y - ratio * (focus.y - offset.height)))
+    }
+
+    func panned(by translation: CGSize) -> PhotoZoom {
+        PhotoZoom(scale: scale, offset: CGSize(width: offset.width + translation.width,
+                                               height: offset.height + translation.height))
+    }
+
+    /// Within the limits: no smaller than the photo fit to the screen, no bigger than `maxScale`, and
+    /// panned no further than the photo's edges (a side that fits stays centered).
+    func settled(content: CGSize, viewport: CGSize) -> PhotoZoom {
+        let scale = min(max(self.scale, 1), PhotoZoom.maxScale)
+        guard scale > 1.01 else { return PhotoZoom() }
+        let ratio = scale / self.scale
+        let maxX = max(0, (content.width * scale - viewport.width) / 2)
+        let maxY = max(0, (content.height * scale - viewport.height) / 2)
+        return PhotoZoom(scale: scale, offset: CGSize(width: min(max(offset.width * ratio, -maxX), maxX),
+                                                      height: min(max(offset.height * ratio, -maxY), maxY)))
     }
 }
 
