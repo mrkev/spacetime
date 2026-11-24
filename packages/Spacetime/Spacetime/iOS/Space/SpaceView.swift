@@ -53,6 +53,12 @@ struct SpaceView: View {
     /// Edit Collections was chosen in the filters' popover; the sheet opens once it's gone.
     @State private var editCollectionsAfterFilters = false
     @FocusState private var searchFocused: Bool
+    /// Whether the toolbar's search field is open: taking the whole toolbar, with a button to close it.
+    /// A search closes it, bringing back Time and Here; the field keeps the text and its clear button.
+    @State private var searchPresented = false
+    /// The search's text, while the field closes. Closing it empties it, as Cancel does, at the end of
+    /// its animation, so the results are kept and the text is put back after.
+    @State private var closingSearch: String?
 
     /// Opens the map at `region`, where it was last left.
     init(region: SearchRegion?) {
@@ -73,7 +79,7 @@ struct SpaceView: View {
                     fenced: fenced)
                 .toolbar(.hidden, for: .navigationBar)
                 .toolbar { bottomToolbar }
-                .searchable(text: $query, placement: .toolbar, prompt: "Search for a place or address")
+                .searchable(text: $query, isPresented: $searchPresented, placement: .toolbar, prompt: "Search for a place or address")
                 .searchFocused($searchFocused)
                 .autocorrectionDisabled()
                 .onSubmit(of: .search) {
@@ -89,6 +95,7 @@ struct SpaceView: View {
         .onChange(of: location.granted) { Task { await centerOnUser() } }
         .onChange(of: model.hereRequests) { Task { await goToMyLocation() } }
         .onChange(of: query) { _, text in
+            if text.isEmpty && closingSearch != nil { return }
             notFound = false
             if text.isEmpty { clearSearch() } else { completer.update(text, near: visibleRegion) }
         }
@@ -299,6 +306,15 @@ struct SpaceView: View {
 
     private func runSearch(_ search: @escaping () async -> [PlaceResult]) {
         searchFocused = false
+        if searchPresented {
+            let text = query
+            closingSearch = text
+            searchPresented = false
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) {
+                closingSearch = nil
+                if query.isEmpty { query = text }
+            }
+        }
         searching = true
         Task {
             let found = await search()
@@ -405,7 +421,9 @@ struct SpaceView: View {
     /// Search results' cards, side by side, with the ones on either side peeking in. Swiping to one selects its pin.
     private func resultCards(_ places: [MapPlace]) -> some View {
         // Cards are as wide as the space between the margins, so with several, the cards on either side
-        // peek into them.
+        // peek into them. Scrolling one just into view lines it up with the margins, so the position
+        // has no anchor: centering one measured the width while the search field was still closing,
+        // and put the first card a margin to the right.
         let margin: CGFloat = places.count > 1 ? 28 : 20
         return ScrollView(.horizontal) {
             LazyHStack(spacing: 8) {
@@ -424,7 +442,7 @@ struct SpaceView: View {
                 guard let i, i != selectedResult else { return }
                 selectedResult = i
                 controller.select(pinId: "result:\(i)")
-            }), anchor: .center)
+            }))
         .scrollIndicators(.hidden)
         .scrollEdgeEffectHidden(true, for: .all)
         .scrollClipDisabled()

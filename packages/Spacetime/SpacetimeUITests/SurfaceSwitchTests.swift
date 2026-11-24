@@ -30,9 +30,18 @@ final class SurfaceSwitchTests: XCTestCase {
         search.typeText("Coffee")
         sleep(2)
         shot("1b-searching")
-        app.buttons["close"].firstMatch.tap()
+        search.typeText("\n")
+        sleep(4)
+        shot("1c-results")
+        // The search closes the field, which keeps its text, between Time and Here.
+        XCTAssert(app.buttons["Here"].isHittable, "The search field is still open")
+        XCTAssertEqual(search.value as? String, "Coffee")
+        // Clearing it opens it to type a new search; closing it brings Time and Here back.
+        app.buttons["Clear text"].firstMatch.tap()
         sleep(1)
-        shot("1c-search-closed")
+        shot("1d-search-cleared")
+        app.buttons["close"].firstMatch.tap()
+        XCTAssert(toTime.waitForExistence(timeout: 5))
 
         toTime.tap()
         let toSpace = app.buttons["Space"]
