@@ -68,48 +68,19 @@ struct SpaceView: View {
         // Todos' geofences, for the selected place or when looking at all of them.
         let fenced = filter == remindersCollectionId ? visible : selected.map { [$0] } ?? []
 
-        ZStack {
-            SpaceMapView(
-                pins: visible.map { place in
-                    MapPin(id: place.id, kind: .place, coordinate: place.coordinate,
-                           color: Places.pinColor(place, collections: space.collections), glyph: place.icon,
-                           name: place.name)
-                } + results.enumerated().map { i, found in
-                    MapPin(id: "result:\(i)", kind: .result(i), coordinate: found.coordinate, color: Hex.blue,
-                           glyph: nil, name: found.name)
-                } + layerPins,
-                fences: fenced.flatMap(\.todos).map {
-                    MapFence(id: $0.id, coordinate: $0.coordinate, radius: $0.radius, color: space.reminderColor)
-                },
-                showsUserLocation: location.granted,
-                initialRegion: initialRegion,
-                controller: controller,
-                onSelectPin: { pin in
-                    switch pin.kind {
-                    case .place: selectedPlaceId = pin.id
-                    case .result(let i): withAnimation { selectedResult = i }
-                    case .photos, .contact: break
-                    }
-                },
-                onDeselectPin: { pin in
-                    if pin.kind == .place && selectedPlaceId == pin.id { selectedPlaceId = nil }
-                },
-                onPoi: { handlePoi($0, mapPlaces) },
-                onLongPress: { addPlace(at: $0) },
-                onRegionChange: { region in
-                    visibleRegion = region
-                    space.saveMapRegion(region)
-                },
-                onTap: { searchFocused = false },
-                thumbnails: thumbnails,
-                onSelectThumbnails: openThumbnails)
-                .ignoresSafeArea()
-
-            VStack(spacing: 0) {
-                filterButton(mapPlaces)
-                Spacer()
-                bottom(selected: selected, resultPlaces: resultPlaces)
-            }
+        NavigationStack {
+            content(mapPlaces: mapPlaces, visible: visible, selected: selected, resultPlaces: resultPlaces,
+                    fenced: fenced)
+                .toolbar(.hidden, for: .navigationBar)
+                .toolbar { bottomToolbar }
+                .searchable(text: $query, placement: .toolbar, prompt: "Search for a place or address")
+                .searchFocused($searchFocused)
+                .autocorrectionDisabled()
+                .onSubmit(of: .search) {
+                    let text = query
+                    let near = visibleRegion
+                    runSearch { await PlaceSearch.search(text, near: near) }
+                }
         }
         .task {
             location.requestAccess()
@@ -119,7 +90,7 @@ struct SpaceView: View {
         .onChange(of: model.hereRequests) { Task { await goToMyLocation() } }
         .onChange(of: query) { _, text in
             notFound = false
-            completer.update(text, near: visibleRegion)
+            if text.isEmpty { clearSearch() } else { completer.update(text, near: visibleRegion) }
         }
         .sheet(item: $openPlace) { request in
             PlaceSheet(id: request.id)
@@ -261,6 +232,71 @@ struct SpaceView: View {
         controller.focus(on: [Coordinate(position.coordinate)], padding: focusPadding)
     }
 
+    /// The map, with the filters over its top and the selected place, search suggestions, or results
+    /// over its bottom, above the toolbar.
+    private func content(mapPlaces: [MapPlace], visible: [MapPlace], selected: MapPlace?,
+                         resultPlaces: [MapPlace], fenced: [MapPlace]) -> some View {
+        ZStack {
+            SpaceMapView(
+                pins: visible.map { place in
+                    MapPin(id: place.id, kind: .place, coordinate: place.coordinate,
+                           color: Places.pinColor(place, collections: space.collections), glyph: place.icon,
+                           name: place.name)
+                } + results.enumerated().map { i, found in
+                    MapPin(id: "result:\(i)", kind: .result(i), coordinate: found.coordinate, color: Hex.blue,
+                           glyph: nil, name: found.name)
+                } + layerPins,
+                fences: fenced.flatMap(\.todos).map {
+                    MapFence(id: $0.id, coordinate: $0.coordinate, radius: $0.radius, color: space.reminderColor)
+                },
+                showsUserLocation: location.granted,
+                initialRegion: initialRegion,
+                controller: controller,
+                onSelectPin: { pin in
+                    switch pin.kind {
+                    case .place: selectedPlaceId = pin.id
+                    case .result(let i): withAnimation { selectedResult = i }
+                    case .photos, .contact: break
+                    }
+                },
+                onDeselectPin: { pin in
+                    if pin.kind == .place && selectedPlaceId == pin.id { selectedPlaceId = nil }
+                },
+                onPoi: { handlePoi($0, mapPlaces) },
+                onLongPress: { addPlace(at: $0) },
+                onRegionChange: { region in
+                    visibleRegion = region
+                    space.saveMapRegion(region)
+                },
+                onTap: { searchFocused = false },
+                thumbnails: thumbnails,
+                onSelectThumbnails: openThumbnails)
+                .ignoresSafeArea()
+
+            VStack(spacing: 0) {
+                filterButton(mapPlaces)
+                Spacer()
+                bottom(selected: selected, resultPlaces: resultPlaces)
+            }
+        }
+    }
+
+    /// The switch to the calendar, the search field, and Here, laid out like the calendar's toolbar.
+    @ToolbarContentBuilder
+    private var bottomToolbar: some ToolbarContent {
+        ToolbarItem(placement: .bottomBar) {
+            Button("Time", systemImage: "calendar") { model.switchTab() }
+                .accessibilityHint("Shows the calendar")
+        }
+        // Spacers keep the buttons apart from the search field, which they'd otherwise share a capsule with.
+        ToolbarSpacer(.fixed, placement: .bottomBar)
+        DefaultToolbarItem(kind: .search, placement: .bottomBar)
+        ToolbarSpacer(.fixed, placement: .bottomBar)
+        ToolbarItem(placement: .bottomBar) {
+            Button("Here", systemImage: "location.fill") { model.goHere() }
+        }
+    }
+
     private func runSearch(_ search: @escaping () async -> [PlaceResult]) {
         searchFocused = false
         searching = true
@@ -275,7 +311,7 @@ struct SpaceView: View {
     }
 
     private func clearSearch() {
-        query = ""
+        if !query.isEmpty { query = "" }
         completer.clear()
         results = []
         notFound = false
@@ -350,6 +386,10 @@ struct SpaceView: View {
                     .padding(.horizontal, 20)
             } else if !resultPlaces.isEmpty {
                 resultCards(resultPlaces)
+            } else if searching {
+                ProgressView()
+                    .padding(10)
+                    .glass(in: .circle)
             } else if notFound {
                 Text("No results for “\(query.trimmingCharacters(in: .whitespaces))”")
                     .font(.footnote.weight(.medium))
@@ -358,39 +398,8 @@ struct SpaceView: View {
                     .padding(.vertical, 8)
                     .glass(in: .capsule)
             }
-            bottomBar.padding(.horizontal, 20)
         }
         .padding(.bottom, 8)
-    }
-
-    /// The search field, between the switch to the calendar and Here. Both step aside while typing.
-    private var bottomBar: some View {
-        HStack(spacing: 8) {
-            if !searchFocused {
-                roundButton("Time", systemImage: "calendar") { model.switchTab() }
-                    .accessibilityHint("Shows the calendar")
-                    .transition(.move(edge: .leading).combined(with: .opacity))
-            }
-            searchBar
-            if !searchFocused {
-                roundButton("Here", systemImage: "location.fill") { model.goHere() }
-                    .transition(.move(edge: .trailing).combined(with: .opacity))
-            }
-        }
-        .animation(.smooth(duration: 0.25), value: searchFocused)
-    }
-
-    /// A round glass button as tall as the search field.
-    private func roundButton(_ title: String, systemImage: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemImage)
-                .font(.system(size: 18, weight: .medium))
-                .frame(width: 46, height: 46)
-                .contentShape(.circle)
-        }
-        .buttonStyle(.plain)
-        .glass(in: .circle, interactive: true)
-        .accessibilityLabel(title)
     }
 
     /// Search results' cards, side by side, with the ones on either side peeking in. Swiping to one selects its pin.
@@ -451,32 +460,6 @@ struct SpaceView: View {
         .frame(maxHeight: 320)
         .fixedSize(horizontal: false, vertical: true)
         .glass(in: .rect(cornerRadius: 22))
-    }
-
-    private var searchBar: some View {
-        HStack(spacing: 8) {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField("Search for a place or address", text: $query)
-                .focused($searchFocused)
-                .autocorrectionDisabled()
-                .submitLabel(.search)
-                .onSubmit {
-                    let text = query
-                    let near = visibleRegion
-                    runSearch { await PlaceSearch.search(text, near: near) }
-                }
-            if searching {
-                ProgressView().controlSize(.small)
-            } else if !query.isEmpty {
-                Button("Clear", systemImage: "xmark.circle.fill", action: clearSearch)
-                    .labelStyle(.iconOnly)
-                    .foregroundStyle(Theme.tertiaryText)
-                    .buttonStyle(.plain)
-            }
-        }
-        .padding(.horizontal, 16)
-        .frame(height: 46)
-        .glass(in: .capsule, interactive: true)
     }
 }
 

@@ -23,6 +23,17 @@ final class SurfaceSwitchTests: XCTestCase {
         sleep(2)
         shot("1-space")
 
+        // The search field is the toolbar's; typing in it shows suggestions above it.
+        let search = app.searchFields.firstMatch
+        XCTAssert(search.waitForExistence(timeout: 5))
+        search.tap()
+        search.typeText("Coffee")
+        sleep(2)
+        shot("1b-searching")
+        app.buttons["close"].firstMatch.tap()
+        sleep(1)
+        shot("1c-search-closed")
+
         toTime.tap()
         let toSpace = app.buttons["Space"]
         XCTAssert(toSpace.waitForExistence(timeout: 5))
