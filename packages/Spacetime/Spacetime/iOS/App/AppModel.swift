@@ -15,9 +15,11 @@ final class AppModel {
     let calendar: CalendarStore
     let location = LocationModel()
     let alarms = AlarmStore.shared
+    let health: HealthStore
     let time: TimeNavigation
 
     var tab: AppTab = .space
+    var showsSettings = false
     /// Bumped by the floating button on each tab, for the screen showing to act on.
     private(set) var hereRequests = 0
     private(set) var todayRequests = 0
@@ -26,6 +28,7 @@ final class AppModel {
         ExpoStorageImport.runIfNeeded(into: storage)
         space = SpaceStore(storage: storage)
         calendar = CalendarStore(meta: ReminderMetaStore(storage: storage))
+        health = HealthStore(storage: storage)
         time = TimeNavigation(storage: storage)
     }
 

@@ -155,6 +155,7 @@ enum TimelineEntry {
     case event(CalendarEvent)
     case reminder(CalendarReminder)
     case alarm(SpacetimeAlarm)
+    case dose(MedicationDose)
 }
 
 /// A day's items sorted for a timeline: what goes in the all-day area, and the timed items laid out.
@@ -162,13 +163,18 @@ struct DayTimeline {
     var allDayEvents: [CalendarEvent] = []
     var allDayReminders: [CalendarReminder] = []
     var timed: [PositionedItem<TimelineEntry>] = []
+    /// Sleep, as the part of each session on this day, drawn behind everything else.
+    var sleep: [(range: MinuteRange, session: SleepSession)] = []
+    /// The day's period flow, shown with the all-day items.
+    var flow: MenstrualFlow?
 
     /// Events spanning the whole of `day` go in the all-day area with all-day ones; the rest are cut to
     /// the part on this day. Reminders and alarms are moments, laid out as if they took `pointMinutes`
     /// (the room they're drawn in), and short events as if they took `minMinutes`. An item starting
-    /// `stackMinutes` after one it overlaps is drawn over it (see `TimelineLayout.layout`).
-    init(day: Date, items: DayItems?, alarms: [SpacetimeAlarm], pointMinutes: Double, minMinutes: Double,
-         stackMinutes: Double = .infinity) {
+    /// `stackMinutes` after one it overlaps is drawn over it (see `TimelineLayout.layout`). From
+    /// `health`, sleep is cut to this day, and medication doses are moments too.
+    init(day: Date, items: DayItems?, alarms: [SpacetimeAlarm], health: HealthDay = .empty, pointMinutes: Double,
+         minMinutes: Double, stackMinutes: Double = .infinity) {
         let dayStart = Dates.startOfDay(day)
         let dayEnd = Dates.addDays(dayStart, 1)
         var timed: [(key: String, range: MinuteRange, item: TimelineEntry)] = []
@@ -195,6 +201,17 @@ struct DayTimeline {
             timed.append(("alarm:\(alarm.id)", MinuteRange(startMinute: start, endMinute: start + pointMinutes),
                           .alarm(alarm)))
         }
+        for dose in health.doses {
+            let start = Double(Dates.minutesIntoDay(dose.date))
+            timed.append(("dose:\(dose.id)", MinuteRange(startMinute: start, endMinute: start + pointMinutes),
+                          .dose(dose)))
+        }
+        for session in health.sleep where session.end > dayStart && session.start < dayEnd {
+            let start = session.start <= dayStart ? 0 : Double(Dates.minutesIntoDay(session.start))
+            let end = session.end >= dayEnd ? 24 * 60 : Double(Dates.minutesIntoDay(session.end))
+            sleep.append((MinuteRange(startMinute: start, endMinute: end), session))
+        }
+        flow = health.flow
         self.timed = TimelineLayout.layout(timed, minVisualMinutes: minMinutes, stackMinutes: stackMinutes)
     }
 }

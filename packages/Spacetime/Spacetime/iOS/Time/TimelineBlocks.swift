@@ -185,6 +185,86 @@ struct AlarmBlock: View {
     }
 }
 
+/// A medication dose logged in Health, at the time it was logged. Skipped doses are faded.
+struct DoseBlock: View {
+    let dose: MedicationDose
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: dose.taken ? "pills.fill" : "pills")
+                .font(.system(size: 12))
+                .foregroundStyle(Theme.medication)
+            Text(dose.name)
+                .font(.system(size: 12, weight: .semibold))
+                .strikethrough(!dose.taken)
+                .lineLimit(1)
+            if let detail = dose.taken ? dose.amount : "Skipped" {
+                Text(detail)
+                    .font(.system(size: 11))
+                    .foregroundStyle(Theme.secondaryText)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .opacity(dose.taken ? 1 : 0.5)
+        .padding(.horizontal, 5)
+        .frame(maxHeight: .infinity)
+        .background(Theme.background, in: .rect(cornerRadius: 4))
+        .overlay { RoundedRectangle(cornerRadius: 4).stroke(Theme.medication, lineWidth: 1) }
+        .accessibilityElement(children: .ignore)
+        .accessibilityLabel(DoseBlock.describe(dose))
+    }
+
+    static func describe(_ dose: MedicationDose) -> String {
+        "\(dose.name), \(dose.taken ? "taken" : "skipped") at \(Dates.formatTime(dose.date))"
+    }
+}
+
+/// Sleep, tinted behind the timeline from falling asleep to waking, with how long was spent asleep.
+struct SleepBand: View {
+    let session: SleepSession
+    /// The band's height, to leave out the label when there's no room for it.
+    let height: CGFloat
+
+    var body: some View {
+        Rectangle()
+            .fill(Theme.sleep.opacity(0.1))
+            .overlay(alignment: .leading) { Rectangle().fill(Theme.sleep.opacity(0.6)).frame(width: 2) }
+            .overlay(alignment: .topTrailing) {
+                if height >= 22 {
+                    Label(SleepBand.duration(session.asleep), systemImage: "bed.double.fill")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundStyle(Theme.sleep)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 4)
+                }
+            }
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel("Asleep \(SleepBand.duration(session.asleep)), \(Dates.formatTime(session.start)) to \(Dates.formatTime(session.end))")
+    }
+
+    /// Like Health's: "7 hr 12 min".
+    static func duration(_ interval: TimeInterval) -> String {
+        Duration.seconds(interval.rounded()).formatted(.units(allowed: [.hours, .minutes], width: .abbreviated))
+    }
+}
+
+/// A period day, in the all-day area.
+struct PeriodChip: View {
+    let flow: MenstrualFlow
+
+    var body: some View {
+        Label(flow.title, systemImage: "drop.fill")
+            .font(.system(size: 13, weight: .semibold))
+            .foregroundStyle(Theme.cycle)
+            .lineLimit(1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 6)
+            .padding(.vertical, 3)
+            .background(Theme.cycle.opacity(0.15), in: .rect(cornerRadius: 4))
+    }
+}
+
 struct ReminderChip: View {
     let reminder: CalendarReminder
     let onPress: (CalendarReminder) -> Void

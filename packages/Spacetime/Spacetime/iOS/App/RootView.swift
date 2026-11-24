@@ -46,7 +46,11 @@ struct RootView: View {
             if phase == .active {
                 model.calendar.checkPermissions()
                 model.calendar.reloadCalendars()
+                model.health.refresh()
             }
+        }
+        .sheet(isPresented: Binding(get: { model.showsSettings }, set: { model.showsSettings = $0 })) {
+            NavigationStack { SettingsView() }.appEnvironment(model)
         }
         .task { await LegacyReminderMigration.run(space: model.space, calendar: model.calendar) }
     }

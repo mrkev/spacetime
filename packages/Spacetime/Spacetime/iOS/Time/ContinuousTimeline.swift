@@ -180,6 +180,7 @@ private struct DayStrip: View {
     @Environment(AppModel.self) private var model
     @Environment(CalendarStore.self) private var calendar
     @Environment(AlarmStore.self) private var alarms
+    @Environment(HealthStore.self) private var health
 
     /// Reminders and alarms are points in time, drawn this wide at any time span.
     private static let pointWidth: CGFloat = 140
@@ -198,17 +199,30 @@ private struct DayStrip: View {
 
     var body: some View {
         let day = DayTimeline(day: date, items: calendar.day(date), alarms: alarms.alarms(on: date),
+                              health: health.day(date),
                               pointMinutes: Double(Self.pointWidth / hourWidth * 60),
                               minMinutes: Double(Self.minEventWidth / hourWidth * 60))
         VStack(alignment: .leading, spacing: 0) {
             header
-            allDayRow(day.allDayEvents, day.allDayReminders)
+            allDayRow(day.allDayEvents, day.allDayReminders, flow: day.flow)
             GeometryReader { geometry in
                 timedArea(day.timed, height: geometry.size.height)
             }
         }
-        .background { hourLines }
-        .onAppear { calendar.ensureMonths(date, radius: 0) }
+        .background {
+            ZStack(alignment: .topLeading) {
+                hourLines
+                ForEach(Array(day.sleep.enumerated()), id: \.offset) { _, sleep in
+                    SleepBand(session: sleep.session, height: 0)
+                        .frame(width: x(sleep.range.endMinute) - x(sleep.range.startMinute))
+                        .offset(x: x(sleep.range.startMinute))
+                }
+            }
+        }
+        .onAppear {
+            calendar.ensureMonths(date, radius: 0)
+            health.ensureMonths(date, radius: 0)
+        }
     }
 
     private var header: some View {
@@ -236,8 +250,11 @@ private struct DayStrip: View {
         }
     }
 
-    private func allDayRow(_ events: [CalendarEvent], _ reminders: [CalendarReminder]) -> some View {
+    private func allDayRow(_ events: [CalendarEvent], _ reminders: [CalendarReminder], flow: MenstrualFlow?) -> some View {
         HStack(spacing: 2) {
+            if let flow {
+                PointLabel(icon: "drop.fill", title: flow.title, color: Theme.cycle)
+            }
             ForEach(events) { event in
                 Button { TimeActions.openEvent(event, calendar: calendar) } label: {
                     StickyLabel {
@@ -297,6 +314,13 @@ private struct DayStrip: View {
                     .buttonStyle(.plain)
                     .frame(width: Self.pointWidth - 4, height: min(26, row - 2))
                     .offset(x: left, y: top)
+                case .dose(let dose):
+                    PointLabel(icon: dose.taken ? "pills.fill" : "pills", title: dose.name, color: Theme.medication)
+                        .opacity(dose.taken ? 1 : 0.5)
+                        .accessibilityElement(children: .ignore)
+                        .accessibilityLabel(DoseBlock.describe(dose))
+                        .frame(width: Self.pointWidth - 4, height: min(26, row - 2))
+                        .offset(x: left, y: top)
                 }
             }
             if Dates.isToday(date) {

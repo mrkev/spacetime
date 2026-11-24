@@ -17,6 +17,10 @@ enum Theme {
 
     /// Alarms are orange, like Clock's.
     static let alarm = Color.orange
+    /// Health's colors for sleep, cycle tracking, and medications.
+    static let sleep = Color(uiColor: .systemIndigo)
+    static let cycle = Color(uiColor: .systemPink)
+    static let medication = Color(uiColor: .systemTeal)
 
     /// An event's fill, in its calendar's color, as strong as Calendar's.
     static func eventFill(_ hex: String) -> Color {

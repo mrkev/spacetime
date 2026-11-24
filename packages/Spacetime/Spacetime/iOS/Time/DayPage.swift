@@ -52,6 +52,7 @@ struct DayPage: View {
     @Environment(AppModel.self) private var model
     @Environment(CalendarStore.self) private var calendar
     @Environment(AlarmStore.self) private var alarms
+    @Environment(HealthStore.self) private var health
     @State private var position: ScrollPosition
     @State private var scrollY: CGFloat = 0
     @State private var draft: Draft?
@@ -82,12 +83,12 @@ struct DayPage: View {
         let items = calendar.day(date)
         let split = dayTimeline(items)
         VStack(spacing: 0) {
-            if !split.allDayEvents.isEmpty || !split.allDayReminders.isEmpty {
-                allDayArea(split.allDayEvents, split.allDayReminders)
+            if !split.allDayEvents.isEmpty || !split.allDayReminders.isEmpty || split.flow != nil {
+                allDayArea(split.allDayEvents, split.allDayReminders, flow: split.flow)
             }
             GeometryReader { geometry in
                 ScrollView {
-                    timeline(split.timed, items: items, width: geometry.size.width)
+                    timeline(split, items: items, width: geometry.size.width)
                 }
                 .scrollPosition($position)
                 .scrollIndicators(.hidden)
@@ -101,6 +102,7 @@ struct DayPage: View {
         }
         .onAppear {
             calendar.ensureMonths(date, radius: 0)
+            health.ensureMonths(date, radius: 0)
             lastHourHeight = hourHeight
         }
         .onChange(of: isCurrent) { _, current in
@@ -129,7 +131,7 @@ struct DayPage: View {
     private func dayTimeline(_ items: DayItems?) -> DayTimeline {
         // Reminders and alarms are drawn at a fixed height, and short events at a minimum one, so
         // they're laid out with the minutes that height covers at this zoom.
-        DayTimeline(day: date, items: items, alarms: alarms.alarms(on: date),
+        DayTimeline(day: date, items: items, alarms: alarms.alarms(on: date), health: health.day(date),
                     pointMinutes: Double((Timeline.reminderHeight + 2) / hourHeight * 60),
                     minMinutes: Double((Timeline.minBlockHeight + 2) / hourHeight * 60),
                     stackMinutes: Double(Timeline.stackRoom / hourHeight * 60))
@@ -154,7 +156,7 @@ struct DayPage: View {
 
     // MARK: Views
 
-    private func allDayArea(_ events: [CalendarEvent], _ reminders: [CalendarReminder]) -> some View {
+    private func allDayArea(_ events: [CalendarEvent], _ reminders: [CalendarReminder], flow: MenstrualFlow?) -> some View {
         HStack(alignment: .top, spacing: 0) {
             Text("all-day")
                 .font(.system(size: 11))
@@ -163,6 +165,7 @@ struct DayPage: View {
                 .padding(.trailing, 8)
                 .padding(.top, 4)
             VStack(alignment: .leading, spacing: 2) {
+                if let flow { PeriodChip(flow: flow) }
                 ForEach(events) { event in
                     Button { TimeActions.openEvent(event, calendar: calendar) } label: {
                         Text(event.title)
@@ -186,7 +189,8 @@ struct DayPage: View {
         .overlay(alignment: .bottom) { Divider() }
     }
 
-    private func timeline(_ timed: [PositionedItem<TimelineEntry>], items: DayItems?, width: CGFloat) -> some View {
+    private func timeline(_ split: DayTimeline, items: DayItems?, width: CGFloat) -> some View {
+        let timed = split.timed
         let columnWidth = width - Timeline.gutter - 8
         let active = activeDraft(items)
         let dragging = active?.dragging == true
@@ -205,6 +209,14 @@ struct DayPage: View {
             HourGrid(hourHeight: hourHeight)
                 .allowsHitTesting(false)
 
+            ForEach(Array(split.sleep.enumerated()), id: \.offset) { _, sleep in
+                let frame = Timeline.blockFrame(sleep.range, hourHeight: hourHeight)
+                SleepBand(session: sleep.session, height: frame.height)
+                    .frame(width: columnWidth, height: frame.height)
+                    .offset(x: Timeline.gutter, y: frame.top)
+                    .allowsHitTesting(false)
+            }
+
             ForEach(timed) { entry in
                 switch entry.item {
                 case .event(let event):
@@ -218,6 +230,12 @@ struct DayPage: View {
                 case .alarm(let alarm):
                     let x = blockX(entry, columnWidth: columnWidth)
                     AlarmBlock(alarm: alarm) { model.time.alarmEditor = AlarmEditRequest(alarm: alarm) }
+                        .frame(width: x.width, height: Timeline.reminderHeight)
+                        .stacked(entry.depth > 0)
+                        .offset(x: x.left, y: Timeline.y(minute: entry.range.startMinute, hourHeight: hourHeight))
+                case .dose(let dose):
+                    let x = blockX(entry, columnWidth: columnWidth)
+                    DoseBlock(dose: dose)
                         .frame(width: x.width, height: Timeline.reminderHeight)
                         .stacked(entry.depth > 0)
                         .offset(x: x.left, y: Timeline.y(minute: entry.range.startMinute, hourHeight: hourHeight))

@@ -6,4 +6,5 @@ nonisolated enum Log {
     static let storage = Logger(subsystem: subsystem, category: "storage")
     static let places = Logger(subsystem: subsystem, category: "places")
     static let errors = Logger(subsystem: subsystem, category: "errors")
+    static let health = Logger(subsystem: subsystem, category: "health")
 }

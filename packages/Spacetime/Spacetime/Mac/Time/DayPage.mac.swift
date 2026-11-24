@@ -219,6 +219,9 @@ struct DayPage: View {
                         .frame(width: w - 2, height: Timeline.reminderHeight)
                         .offset(x: Timeline.gutter + CGFloat(entry.column) * w,
                                 y: Timeline.y(minute: entry.range.startMinute, hourHeight: hourHeight))
+                case .dose:
+                    // Health is only read on the iPhone.
+                    EmptyView()
                 }
             }
 

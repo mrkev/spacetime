@@ -52,6 +52,7 @@ private struct VisibleMonths: Equatable {
 struct MonthView: View {
     @Environment(AppModel.self) private var model
     @Environment(CalendarStore.self) private var calendar
+    @Environment(HealthStore.self) private var health
     @State private var position: ScrollPosition
     @State private var visible: VisibleMonths
     private let thisMonth: Date
@@ -131,6 +132,7 @@ struct MonthView: View {
     private func showing(_ offset: Int) {
         if model.time.transition == nil { model.time.month = month(offset) }
         calendar.ensureMonths(month(offset), radius: 2)
+        health.ensureMonths(month(offset), radius: 2)
     }
 }
 
@@ -164,6 +166,7 @@ private struct MonthItem: View {
     let split: MonthSplit?
     let onPressDay: (Date) -> Void
     @Environment(CalendarStore.self) private var calendar
+    @Environment(HealthStore.self) private var health
 
     /// How far a row moves, and how faded it is, as the month view splits at a week: the title is row
     /// -1.
@@ -199,7 +202,7 @@ private struct MonthItem: View {
                                 let date = Dates.addDays(month, number - 1)
                                 let items = calendar.day(date)
                                 DayCell(date: date, hasItems: items.map { !$0.events.isEmpty || !$0.reminders.isEmpty } ?? false,
-                                        onPress: onPressDay)
+                                        period: health.day(date).flow != nil, onPress: onPressDay)
                                     .frame(width: cellWidth)
                             } else {
                                 Color.clear.frame(width: cellWidth)
@@ -218,6 +221,8 @@ private struct MonthItem: View {
 private struct DayCell: View {
     let date: Date
     let hasItems: Bool
+    /// A period day, from Cycle Tracking, which gets a pink dot of its own.
+    var period = false
     let onPress: (Date) -> Void
 
     var body: some View {
@@ -231,9 +236,12 @@ private struct DayCell: View {
                     .foregroundStyle(isToday ? Color.white : weekend ? Theme.secondaryText : .primary)
                     .frame(width: 32, height: 32)
                     .background { if isToday { Circle().fill(Theme.tint) } }
-                Circle()
-                    .fill(hasItems ? Theme.secondaryText : .clear)
-                    .frame(width: 6, height: 6)
+                HStack(spacing: 3) {
+                    if period { Circle().fill(Theme.cycle).frame(width: 6, height: 6) }
+                    if hasItems || !period {
+                        Circle().fill(hasItems ? Theme.secondaryText : .clear).frame(width: 6, height: 6)
+                    }
+                }
                 Spacer(minLength: 0)
             }
             .padding(.top, 6)

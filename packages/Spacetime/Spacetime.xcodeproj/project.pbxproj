@@ -390,6 +390,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = Spacetime.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = Spacetime.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = J8ZU83TC57;
@@ -404,6 +406,7 @@
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Spacetime;
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Spacetime shows your calendar events in the Time tab.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Spacetime shows your sleep, periods, and medications on your calendar.";
 				INFOPLIST_KEY_NSLocationUsageDescription = "Spacetime shows where you are on the map.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Spacetime shows where you are on the map.";
 				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Spacetime shows your reminders alongside your calendar.";
@@ -444,6 +447,8 @@
 			buildSettings = {
 				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
 				ASSETCATALOG_COMPILER_GLOBAL_ACCENT_COLOR_NAME = AccentColor;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphoneos*]" = Spacetime.entitlements;
+				"CODE_SIGN_ENTITLEMENTS[sdk=iphonesimulator*]" = Spacetime.entitlements;
 				CODE_SIGN_STYLE = Automatic;
 				CURRENT_PROJECT_VERSION = 1;
 				DEVELOPMENT_TEAM = J8ZU83TC57;
@@ -458,6 +463,7 @@
 				INFOPLIST_FILE = Info.plist;
 				INFOPLIST_KEY_CFBundleDisplayName = Spacetime;
 				INFOPLIST_KEY_NSCalendarsFullAccessUsageDescription = "Spacetime shows your calendar events in the Time tab.";
+				INFOPLIST_KEY_NSHealthShareUsageDescription = "Spacetime shows your sleep, periods, and medications on your calendar.";
 				INFOPLIST_KEY_NSLocationUsageDescription = "Spacetime shows where you are on the map.";
 				INFOPLIST_KEY_NSLocationWhenInUseUsageDescription = "Spacetime shows where you are on the map.";
 				INFOPLIST_KEY_NSRemindersFullAccessUsageDescription = "Spacetime shows your reminders alongside your calendar.";

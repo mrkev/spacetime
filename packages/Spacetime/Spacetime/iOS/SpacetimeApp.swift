@@ -9,6 +9,7 @@ extension View {
             .environment(model.calendar)
             .environment(model.location)
             .environment(model.alarms)
+            .environment(model.health)
     }
 }
 

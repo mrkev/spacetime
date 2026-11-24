@@ -199,6 +199,9 @@ private struct DayStrip: View {
                     .buttonStyle(.plain)
                     .frame(width: Self.pointWidth - 4, height: min(26, row - 2))
                     .offset(x: left, y: top)
+                case .dose:
+                    // Health is only read on the iPhone.
+                    EmptyView()
                 }
             }
             if Dates.isToday(date) {

@@ -350,6 +350,9 @@ struct TimeToolbar: ToolbarContent {
                         model.time.path.append(.alarms)
                     }
                 }
+                Button("Settings", systemImage: "gearshape") {
+                    model.showsSettings = true
+                }
             }
             AddMenu(day: day, onNewReminder: onNewReminder) {
                 model.time.alarmEditor = AlarmEditRequest(day: $0)
