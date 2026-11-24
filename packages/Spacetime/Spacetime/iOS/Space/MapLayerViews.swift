@@ -63,6 +63,7 @@ enum PhotoImages {
 /// initials). A cluster shows one of them and how many photos or contacts are in it.
 final class ThumbnailAnnotationView: MKAnnotationView {
     static let reuseIdentifier = "thumbnail"
+    static let clusterReuseIdentifier = "thumbnailCluster"
 
     /// Runs when it's tapped, with the pins it stands for.
     var onSelect: ([MapPin]) -> Void = { _ in }
@@ -100,8 +101,9 @@ final class ThumbnailAnnotationView: MKAnnotationView {
 
     required init?(coder: NSCoder) { fatalError() }
 
-    /// Shows `pins` (one, or a cluster's), loading the image from `thumbnails`.
-    func configure(_ pins: [MapPin], thumbnails: MapThumbnails?) {
+    /// Shows `pins` (one, or a cluster's), loading the image from `thumbnails`. A cluster's view isn't
+    /// clustered itself.
+    func configure(_ pins: [MapPin], isCluster: Bool, thumbnails: MapThumbnails?) {
         self.pins = pins
         guard let first = pins.first else { return }
         let isPhoto = first.kind == .photos
@@ -111,7 +113,7 @@ final class ThumbnailAnnotationView: MKAnnotationView {
         imageView.frame = bounds
         imageView.layer.cornerRadius = isPhoto ? 8 : side / 2
         initials.frame = bounds
-        clusteringIdentifier = isPhoto ? "photos" : "contacts"
+        clusteringIdentifier = isCluster ? nil : isPhoto ? "photos" : "contacts"
         displayPriority = .defaultHigh
         zPriority = isPhoto ? .defaultUnselected : .max
 

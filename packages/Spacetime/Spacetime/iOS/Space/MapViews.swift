@@ -136,6 +136,8 @@ struct SpaceMapView {
         map.showsCompass = false
         map.register(ThumbnailAnnotationView.self,
                      forAnnotationViewWithReuseIdentifier: ThumbnailAnnotationView.reuseIdentifier)
+        map.register(ThumbnailAnnotationView.self,
+                     forAnnotationViewWithReuseIdentifier: ThumbnailAnnotationView.clusterReuseIdentifier)
         // The Mac's MKMapView can't select points of interest.
         map.selectableMapFeatures = [.pointsOfInterest]
         map.register(MKMarkerAnnotationView.self, forAnnotationViewWithReuseIdentifier: "pin")
@@ -210,10 +212,15 @@ struct SpaceMapView {
 
         private func thumbnailView(_ mapView: MKMapView, _ annotation: MKAnnotation,
                                    _ pins: [MapPin]) -> MKAnnotationView {
-            let view = mapView.dequeueReusableAnnotationView(withIdentifier: ThumbnailAnnotationView.reuseIdentifier,
-                                                             for: annotation)
+            // Clusters' views are kept apart from pins': MapKit treats a view that showed a cluster as one
+            // after it's reused, and crashed asking a pin for its cluster's members.
+            let isCluster = annotation is MKClusterAnnotation
+            let view = mapView.dequeueReusableAnnotationView(
+                withIdentifier: isCluster ? ThumbnailAnnotationView.clusterReuseIdentifier
+                    : ThumbnailAnnotationView.reuseIdentifier,
+                for: annotation)
             guard let thumbnail = view as? ThumbnailAnnotationView else { return view }
-            thumbnail.configure(pins, thumbnails: parent.thumbnails)
+            thumbnail.configure(pins, isCluster: isCluster, thumbnails: parent.thumbnails)
             thumbnail.onSelect = { [weak self, weak mapView] pins in
                 // Deselected right away, so it can be tapped again.
                 DispatchQueue.main.async { mapView?.deselectAnnotation(annotation, animated: false) }
