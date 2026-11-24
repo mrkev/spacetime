@@ -94,8 +94,11 @@ private struct PhotoPage: View {
     @State private var scrollY: CGFloat = 0
     @State private var info: PhotoInfo?
     @State private var zoom = PhotoZoom()
-    /// The zoom as a pinch or drag began.
-    @State private var gestureStart: PhotoZoom?
+    /// The zoom, and where the fingers were, as a pinch began.
+    @State private var pinchStart: (zoom: PhotoZoom, location: CGPoint)?
+    /// The zoom, and how far the finger had moved, as a one-finger drag began (or carried on after a
+    /// pinch).
+    @State private var dragStart: (zoom: PhotoZoom, translation: CGSize)?
     /// The photo at full size, loaded once it's zoomed in far enough to need it.
     @State private var fullImage: UIImage?
 
@@ -145,7 +148,7 @@ private struct PhotoPage: View {
         .scrollIndicators(.hidden)
         .scrollDisabled(zoom.isZoomed)
         // Zooming is for the photo on its own, not with the details up.
-        .simultaneousGesture(pinch, isEnabled: !showsInfo)
+        .gesture(PinchRecognizer(action: pinch))
         .simultaneousGesture(pan, isEnabled: zoom.isZoomed)
         .onTapGesture(count: 2) { location in
             guard !showsInfo else { return }
@@ -193,28 +196,41 @@ private struct PhotoPage: View {
         }
     }
 
-    private var pinch: some Gesture {
-        MagnifyGesture()
-            .onChanged { value in
-                let start = gestureStart ?? zoom
-                gestureStart = start
-                zoom = start.magnified(by: value.magnification, around: fromCenter(value.startLocation))
-            }
-            .onEnded { _ in
-                gestureStart = nil
-                withAnimation(.spring(duration: 0.35)) { zoom = zoom.settled(content: photoSize, viewport: size) }
-            }
+    /// Pinching zooms around the fingers, and moving them pans, like Photos.
+    private func pinch(_ phase: GesturePhase) {
+        switch phase.state {
+        case .began:
+            guard !showsInfo else { return }
+            pinchStart = (zoom, phase.localLocation)
+        case .changed:
+            guard let start = pinchStart else { return }
+            let moved = CGSize(width: phase.localLocation.x - start.location.x,
+                               height: phase.localLocation.y - start.location.y)
+            zoom = start.zoom.magnified(by: phase.scale, around: fromCenter(start.location)).panned(by: moved)
+        case .ended, .cancelled:
+            guard pinchStart != nil else { return }
+            pinchStart = nil
+            dragStart = nil
+            withAnimation(.spring(duration: 0.35)) { zoom = zoom.settled(content: photoSize, viewport: size) }
+        }
     }
 
     private var pan: some Gesture {
         DragGesture()
             .onChanged { value in
-                let start = gestureStart ?? zoom
-                gestureStart = start
-                zoom = start.panned(by: value.translation)
+                // The pinch pans while two fingers are down; a finger left down carries on from there.
+                guard pinchStart == nil else {
+                    dragStart = nil
+                    return
+                }
+                let start = dragStart ?? (zoom, value.translation)
+                dragStart = start
+                zoom = start.zoom.panned(by: CGSize(width: value.translation.width - start.translation.width,
+                                                    height: value.translation.height - start.translation.height))
             }
             .onEnded { value in
-                gestureStart = nil
+                guard pinchStart == nil else { return }
+                dragStart = nil
                 // Carries on a little in the direction it was flung, then stays within the photo.
                 let flung = zoom.panned(by: CGSize(width: value.velocity.width * 0.1, height: value.velocity.height * 0.1))
                 withAnimation(.spring(duration: 0.45)) { zoom = flung.settled(content: photoSize, viewport: size) }
