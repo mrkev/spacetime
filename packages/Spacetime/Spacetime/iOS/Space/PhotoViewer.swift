@@ -14,6 +14,9 @@ struct PhotoViewer: View {
     @State private var currentId: String?
     /// Whether the details are showing. It carries over from photo to photo, as in Photos.
     @State private var showsInfo = false
+    /// Full-size images of the photo showing and the ones on either side, decoded ahead of time so
+    /// swiping to one shows it right away.
+    @State private var images: [String: UIImage] = [:]
 
     init(assets: [PHAsset], startId: String, placeName: String?) {
         self.assets = assets
@@ -27,8 +30,8 @@ struct PhotoViewer: View {
             ScrollView(.horizontal) {
                 LazyHStack(spacing: 0) {
                     ForEach(assets, id: \.localIdentifier) { asset in
-                        PhotoPage(asset: asset, size: geometry.size, showsInfo: $showsInfo,
-                                  isCurrent: asset.localIdentifier == currentId)
+                        PhotoPage(asset: asset, size: geometry.size, image: images[asset.localIdentifier],
+                                  showsInfo: $showsInfo, isCurrent: asset.localIdentifier == currentId)
                             .frame(width: geometry.size.width, height: geometry.size.height)
                     }
                 }
@@ -37,6 +40,7 @@ struct PhotoViewer: View {
             .scrollTargetBehavior(.paging)
             .scrollPosition(id: $currentId)
             .scrollIndicators(.hidden)
+            .task(id: currentId) { await preload(side: max(geometry.size.width, geometry.size.height)) }
         }
         .ignoresSafeArea()
         .background(Color.black.ignoresSafeArea())
@@ -45,6 +49,21 @@ struct PhotoViewer: View {
         .navigationSubtitle(current?.creationDate.map(Self.subtitle) ?? "")
         .navigationBarTitleDisplayMode(.inline)
         .toolbarColorScheme(.dark, for: .navigationBar)
+    }
+
+    /// Loads and decodes the current photo, then the next and the previous, and lets go of the rest.
+    private func preload(side: CGFloat) async {
+        guard let index = assets.firstIndex(where: { $0.localIdentifier == currentId }) else { return }
+        let nearby = [index, index + 1, index - 1].filter(assets.indices.contains).map { assets[$0] }
+        let keep = Set(assets[max(0, index - 2)...min(assets.count - 1, index + 2)].map(\.localIdentifier))
+        images = images.filter { keep.contains($0.key) }
+        for asset in nearby where images[asset.localIdentifier] == nil {
+            guard let image = await PhotoImages.image(asset, side: side, fill: false) else { continue }
+            // Decoded off the main thread, so drawing it the first time doesn't hitch a swipe.
+            let decoded = await image.byPreparingForDisplay() ?? image
+            guard !Task.isCancelled else { return }
+            images[asset.localIdentifier] = decoded
+        }
     }
 
     /// Like Photos': the weekday for this week's photos, otherwise the date, and the time.
@@ -62,11 +81,12 @@ struct PhotoViewer: View {
 private struct PhotoPage: View {
     let asset: PHAsset
     let size: CGSize
+    /// Loaded by the viewer, ahead of time.
+    let image: UIImage?
     @Binding var showsInfo: Bool
     let isCurrent: Bool
     @State private var position = ScrollPosition(y: 0)
     @State private var scrollY: CGFloat = 0
-    @State private var image: UIImage?
     @State private var info: PhotoInfo?
 
     private static let gap: CGFloat = 20
@@ -115,9 +135,6 @@ private struct PhotoPage: View {
         .onChange(of: isCurrent) { _, current in
             // A photo swiped to opens the way the last one was.
             if current { position = ScrollPosition(y: showsInfo ? infoOffset : 0) }
-        }
-        .task(id: asset.localIdentifier) {
-            image = await PhotoImages.image(asset, side: max(size.width, size.height), fill: false)
         }
         .task(id: isCurrent && showsInfo) {
             guard isCurrent, showsInfo, info == nil else { return }
