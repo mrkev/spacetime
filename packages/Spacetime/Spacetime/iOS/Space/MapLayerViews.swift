@@ -114,7 +114,9 @@ final class ThumbnailAnnotationView: MKAnnotationView {
         imageView.layer.cornerRadius = isPhoto ? 8 : side / 2
         initials.frame = bounds
         clusteringIdentifier = isCluster ? nil : isPhoto ? "photos" : "contacts"
-        displayPriority = .defaultHigh
+        // Always shown: they cluster among themselves, and a lower priority hid them under the user's
+        // location, which is where a lot of photos are taken.
+        displayPriority = .required
         zPriority = isPhoto ? .defaultUnselected : .max
 
         let count = isPhoto ? pins.reduce(0) { $0 + $1.count } : pins.count
@@ -198,7 +200,7 @@ struct PhotosSheet: View {
             .navigationSubtitle(dateRange)
             .navigationBarTitleDisplayMode(.inline)
             .navigationDestination(for: String.self) { id in
-                if let asset = assets.first(where: { $0.localIdentifier == id }) { PhotoDetail(asset: asset) }
+                PhotoViewer(assets: assets, startId: id, placeName: placeName)
             }
             .toolbar {
                 ToolbarItem(placement: .confirmationAction) {
@@ -244,26 +246,6 @@ private struct PhotoCell: View {
             .contentShape(.rect)
             .task(id: asset.localIdentifier) { image = await PhotoImages.image(asset, side: 120) }
             .accessibilityLabel(asset.creationDate.map(photoDate) ?? "Photo")
-    }
-}
-
-private struct PhotoDetail: View {
-    let asset: PHAsset
-    @State private var image: UIImage?
-
-    var body: some View {
-        ZStack {
-            Color.black.ignoresSafeArea()
-            if let image {
-                Image(uiImage: image).resizable().scaledToFit()
-            } else {
-                ProgressView().tint(.white)
-            }
-        }
-        .navigationTitle(asset.creationDate.map(photoDate) ?? "")
-        .navigationSubtitle(asset.creationDate.map(Dates.formatTime) ?? "")
-        .navigationBarTitleDisplayMode(.inline)
-        .task { image = await PhotoImages.image(asset, side: 1200, fill: false) }
     }
 }
 

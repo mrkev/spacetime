@@ -239,6 +239,7 @@ final class MapLayers: NSObject {
         Task {
             let groups = await Task.detached(priority: .utility) { PhotoGrouping.group(Self.readPhotoPoints()) }.value
             guard generation == photosGeneration else { return }
+            Log.places.debug("Photos layer: \(groups.reduce(0) { $0 + $1.photoIds.count }) photos at \(groups.count) spots")
             photoGroups = groups
         }
     }
